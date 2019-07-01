@@ -245,7 +245,7 @@ def dir2html(path, full=True):
     """
     if path.endswith("/"):
         path = path[:-1]
-    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}")
+    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}").replace(" ", "%20")
     filenames = {f"<h1>{path}</h1>": None}
     if path != SMDV_HOME:
         filenames.update({"<b>⬆️  ..</b>": url(os.path.dirname(path))})
