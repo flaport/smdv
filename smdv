@@ -108,7 +108,7 @@ def create_app():
 
 def daemon_start():
     print("smdv: starting daemon...")
-    create_app().run(debug=True, port=SMDV_PORT)
+    create_app().run(debug=True, port=SMDV_PORT, threaded=True)
 
 
 def daemon_start_background():
@@ -150,11 +150,11 @@ def daemon_stop():
         raise RuntimeError(response)
 
 
-def md2html(s: str):
-    """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
+def body2html(body: str, refresh=False):
+    """ convert a html body to full html
 
     Args:
-        s: str: the markdown string to convert
+        body: str: the html body
 
     Returns:
         html: str: the resulting html
@@ -164,19 +164,11 @@ def md2html(s: str):
         stylesheet = os.path.abspath(os.path.expanduser(stylesheet)).replace(
             SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static"
         )
-    md_out = subprocess.Popen(["printf", s.encode()], stdout=subprocess.PIPE).stdout
-    html_out = (
-        subprocess.check_output(
-            ["pandoc", "--from", "gfm", "--to", "html"], stdin=md_out
-        )
-        .decode()
-        .strip()
-    )
     html = textwrap.dedent(
         f"""
         <!DOCTYPE html>
         <html>
-        <meta http-equiv="refresh" content="1"> <!-- automatically refresh every second -->
+        {'<meta http-equiv="refresh" content="1"> <!-- automatically refresh every second -->' if refresh else ''}
         <head>
         <link rel="stylesheet" href="{stylesheet}">
         <style>
@@ -186,13 +178,68 @@ def md2html(s: str):
         </head>
         <body>
         <article class="markdown-body">
-        {html_out}
+        {body}
+        </article>
         </body>
         </html>
         """
     )
     return html
 
+def md2html(s: str, full=True):
+    """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
+
+    Args:
+        s: str: the markdown string to convert
+
+    Returns:
+        html: str: the resulting html
+    """
+    md_out = subprocess.Popen(["printf", s.encode()], stdout=subprocess.PIPE).stdout
+    html_out = (
+        subprocess.check_output(
+            ["pandoc", "--from", "gfm", "--to", "html"], stdin=md_out
+        )
+        .decode()
+        .strip()
+    )
+    if not full:
+        return html_out
+    html = body2html(html_out, refresh=True)
+    return html
+
+def dir2html(path, full=True):
+    """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
+
+    Args:
+        path: str: the directory path
+
+    Returns:
+        html: str: the resulting html
+    """
+    if path.endswith("/"):
+        path = path[:-1]
+    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}")
+    filenames = {f"<h1>{path}</h1>":None}
+    if path != SMDV_HOME:
+        filenames.update({"<b>⬆️  ..</b>":url(os.path.dirname(path))})
+    listdir = sorted([p for p in os.listdir(path)], key=str.upper)
+    md_html = ""
+    for readme in ["README.md", "Readme.md", "readme.md"]:
+        if readme in listdir:
+            with open(os.path.join(path, readme), "r") as file:
+                md_content = file.read()
+            md_html = md2html(md_content, full=False)
+    listdir = [os.path.join(path, p) for p in listdir]
+    listdir = [p for p in listdir if os.path.isdir(p)] + [p for p in listdir if not os.path.isdir(p)]
+    filenames.update({(f"<b>📁  {os.path.basename(p)}</b>" if os.path.isdir(p) else f"📄  {os.path.basename(p)}"):url(p) for p in listdir})
+    html = "<br>\n".join([f"<a href={u}>{p}</a>" if u is not None else p for p, u in filenames.items()])
+    if not full:
+        return html
+    if md_html:
+        html = html + "<br><br><hr><br>" + md_html
+    html = body2html(html, refresh=False)
+    return html
 
 ## Routes.
 
@@ -207,9 +254,18 @@ def request_daemon_stop():
     return "smdv: server successfully stopped."
 
 
+@bp.route("/<path:path>.md")
+def view_md(path):
+    """ view markdown file """
+    path = os.path.join(SMDV_HOME, path + ".md")
+    with open(path, "r") as file:
+        md = file.read()
+    html = md2html(md)
+    return html
+
 @bp.route("/")
 @bp.route("/<path:path>")
-def view_dir(path=""):
+def view_other(path=""):
     """ view file/directory
 
     Args:
@@ -221,22 +277,11 @@ def view_dir(path=""):
     """
     path = os.path.join(SMDV_HOME, path)
     if os.path.isdir(path):
-        return path
+        return dir2html(path)
     else:
         return flask.redirect(
             path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
         )
-
-
-@bp.route("/<path:path>.md")
-def view_md(path):
-    """ view markdown file """
-    path = os.path.join(SMDV_HOME, path + ".md")
-    with open(path, "r") as file:
-        md = file.read()
-    html = md2html(md)
-    return html
-
 
 ## Script.
 
