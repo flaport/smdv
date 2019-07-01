@@ -39,6 +39,9 @@ SMDV_CSS = os.environ.get(
     "SMDV_CSS",
     "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
 )
+SMDV_JQUERY = os.environ.get(
+    "SMDV_JQUERY", "https://code.jquery.com/jquery-3.4.1.min.js"
+)
 SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
 SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
 
@@ -69,6 +72,9 @@ group.add_argument(
     action="store_true",
     default=False,
     help="stop daemon; all other arguments will be ignored",
+)
+group.add_argument(
+    "-r", "--reload", action="store_true", default=False, help="reload active webpage"
 )
 
 
@@ -150,7 +156,15 @@ def daemon_stop():
         raise RuntimeError(response)
 
 
-def body2html(body: str, refresh=False):
+def reload():
+    with open("/tmp/smdv_reload", "w") as file:
+        file.write("reload required")
+
+
+## Converters.
+
+
+def body2html(body: str):
     """ convert a html body to full html
 
     Args:
@@ -164,27 +178,94 @@ def body2html(body: str, refresh=False):
         stylesheet = os.path.abspath(os.path.expanduser(stylesheet)).replace(
             SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static"
         )
+    jquery = SMDV_JQUERY
+    if not jquery.startswith("http"):
+        jquery = os.path.abspath(os.path.expanduser(jquery)).replace(
+            SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static"
+        )
     html = textwrap.dedent(
         f"""
         <!DOCTYPE html>
         <html>
-        {'<meta http-equiv="refresh" content="1"> <!-- automatically refresh every second -->' if refresh else ''}
         <head>
         <link rel="stylesheet" href="{stylesheet}">
         <style>
             .markdown-body {{ box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; }}
             @media (max-width: 767px) {{ .markdown-body {{ padding: 15px; }} }}
         </style>
+        <script src="{jquery}"></script>
         </head>
         <body>
         <article class="markdown-body">
         {body}
         </article>
+        <script>
+            function queryReload() {{
+            $.ajax({{
+               url: "/@queryReload",
+               success: function(data) {{
+                      if (data == "true")
+                         location.reload();
+                      else
+                         setTimeout(queryReload, 1000);
+               }}
+            }});
+            }}
+            setTimeout(queryReload, 1000);
+        </script>
         </body>
         </html>
         """
     )
     return html
+
+
+def dir2html(path, full=True):
+    """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
+
+    Args:
+        path: str: the directory path
+
+    Returns:
+        html: str: the resulting html
+    """
+    if path.endswith("/"):
+        path = path[:-1]
+    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}")
+    filenames = {f"<h1>{path}</h1>": None}
+    if path != SMDV_HOME:
+        filenames.update({"<b>⬆️  ..</b>": url(os.path.dirname(path))})
+    listdir = sorted([p for p in os.listdir(path)], key=str.upper)
+    md_html = ""
+    for readme in ["README.md", "Readme.md", "readme.md"]:
+        if readme in listdir:
+            with open(os.path.join(path, readme), "r") as file:
+                md_content = file.read()
+            md_html = md2html(md_content, full=False)
+    listdir = [os.path.join(path, p) for p in listdir]
+    listdir = [p for p in listdir if os.path.isdir(p)] + [
+        p for p in listdir if not os.path.isdir(p)
+    ]
+    filenames.update(
+        {
+            (
+                f"<b>📁  {os.path.basename(p)}</b>"
+                if os.path.isdir(p)
+                else f"📄  {os.path.basename(p)}"
+            ): url(p)
+            for p in listdir
+        }
+    )
+    html = "<br>\n".join(
+        [f"<a href={u}>{p}</a>" if u is not None else p for p, u in filenames.items()]
+    )
+    if not full:
+        return html
+    if md_html:
+        html = html + "<br><br><hr><br>" + md_html
+    html = body2html(html)
+    return html
+
 
 def md2html(s: str, full=True):
     """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
@@ -205,43 +286,21 @@ def md2html(s: str, full=True):
     )
     if not full:
         return html_out
-    html = body2html(html_out, refresh=True)
+    html = body2html(html_out)
     return html
 
-def dir2html(path, full=True):
-    """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
-
-    Args:
-        path: str: the directory path
-
-    Returns:
-        html: str: the resulting html
-    """
-    if path.endswith("/"):
-        path = path[:-1]
-    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}")
-    filenames = {f"<h1>{path}</h1>":None}
-    if path != SMDV_HOME:
-        filenames.update({"<b>⬆️  ..</b>":url(os.path.dirname(path))})
-    listdir = sorted([p for p in os.listdir(path)], key=str.upper)
-    md_html = ""
-    for readme in ["README.md", "Readme.md", "readme.md"]:
-        if readme in listdir:
-            with open(os.path.join(path, readme), "r") as file:
-                md_content = file.read()
-            md_html = md2html(md_content, full=False)
-    listdir = [os.path.join(path, p) for p in listdir]
-    listdir = [p for p in listdir if os.path.isdir(p)] + [p for p in listdir if not os.path.isdir(p)]
-    filenames.update({(f"<b>📁  {os.path.basename(p)}</b>" if os.path.isdir(p) else f"📄  {os.path.basename(p)}"):url(p) for p in listdir})
-    html = "<br>\n".join([f"<a href={u}>{p}</a>" if u is not None else p for p, u in filenames.items()])
-    if not full:
-        return html
-    if md_html:
-        html = html + "<br><br><hr><br>" + md_html
-    html = body2html(html, refresh=False)
-    return html
 
 ## Routes.
+
+
+@bp.route("/@queryReload")
+def query_reload():
+    """ query the server if the current page needs a reload """
+    if os.path.exists("/tmp/smdv_reload"):
+        os.remove("/tmp/smdv_reload")
+        return "true"
+    else:
+        return "false"
 
 
 @bp.route("/@daemon-stop")
@@ -263,6 +322,7 @@ def view_md(path):
     html = md2html(md)
     return html
 
+
 @bp.route("/")
 @bp.route("/<path:path>")
 def view_other(path=""):
@@ -283,6 +343,7 @@ def view_other(path=""):
             path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
         )
 
+
 ## Script.
 
 if __name__ == "__main__":
@@ -302,6 +363,10 @@ if __name__ == "__main__":
 
         if args.daemon_status:
             daemon_status()
+            exit(0)
+
+        if args.reload:
+            reload()
             exit(0)
 
         # open daemon in subprocess. (or let it fail if a daemon is already running)
