@@ -44,6 +44,9 @@ SMDV_JQUERY = os.environ.get(
 )
 SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
 SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
+SMDV_NVR_PORT = os.environ.get("SMDV_NVR_PORT", "9877")
+SMDV_TERMINAL = os.environ.get("SMDV_TERMINAL", os.environ.get("TERMINAL", ""))
+SMDV_EDIT = bool(os.environ.get("SMDV_EDIT", False))
 
 
 ## Argument parser
@@ -76,6 +79,13 @@ group.add_argument(
 group.add_argument(
     "-r", "--reload", action="store_true", default=False, help="reload active webpage"
 )
+parser.add_argument(
+    "-e",
+    "--edit",
+    action="store_true",
+    default=False,
+    help="each time a markdown page is viewed, immediately also open the source in neovim remote",
+)
 
 
 ## Blueprints.
@@ -90,7 +100,7 @@ bp = flask.Blueprint(
 
 def browser_open(filename=""):
     """ spawn a new browser and open the specified file """
-    url = os.path.abspath(os.path.expanduser(args.filename)).replace(
+    url = os.path.abspath(os.path.expanduser(filename)).replace(
         SMDV_HOME, f"http://localhost:{SMDV_PORT}"
     )
     print(f"smdv: opening browser at {url}")
@@ -154,6 +164,27 @@ def daemon_stop():
         print(response)
     else:
         raise RuntimeError(response)
+
+
+def neovim_remote_open(filename=""):
+    path = os.path.abspath(os.path.expanduser(filename))
+    if not os.path.exists(path):
+        return
+    result = subprocess.call(
+        ["nvr", "-s", "--nostart", "--servername", f"localhost:{SMDV_NVR_PORT}", path]
+    )
+    if result != 0:
+        subprocess.Popen(
+            [
+                SMDV_TERMINAL,
+                "-e",
+                "nvr",
+                "-s",
+                "--servername",
+                f"localhost:{SMDV_NVR_PORT}",
+                path,
+            ]
+        )
 
 
 def is_binary_file(filepathname):
@@ -283,16 +314,33 @@ def dir2html(path, full=True):
     return html
 
 
-def md2html(s: str, full=True):
+def md2html(content: str = "", path: str = "", full=True):
     """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
 
     Args:
-        s: str: the markdown string to convert
+        content: str: the markdown string to convert; mutually exclusive with path
+        path: str: the file path of the file to convert; mutually exclusive with content
 
     Returns:
         html: str: the resulting html
+
     """
-    md_out = subprocess.Popen(["printf", s.encode()], stdout=subprocess.PIPE).stdout
+    if content and path or (not content and not path):
+        raise ValueError("content OR path expected. Not both")
+
+    if path.endswith("/"):
+        path = path[:-1]
+
+    dirpath = os.path.dirname(path)
+    if path:
+        with open(path, "r") as file:
+            content = file.read()
+        content = f"[edit]({f'{os.path.basename(path)}/@edit'})\n{content}"
+
+    md_out = subprocess.Popen(
+        ["printf", content.encode()], stdout=subprocess.PIPE
+    ).stdout
+    # sed_out = subprocess.Popen(["sed", f"s/\[\(.*\)\](\(.*\))/\[\1\](X\2)/g"], stdout=subprocess.PIPE).stdout
     html_out = (
         subprocess.check_output(
             ["pandoc", "--from", "gfm", "--to", "html"], stdin=md_out
@@ -307,6 +355,16 @@ def md2html(s: str, full=True):
 
 
 ## Routes.
+
+
+@bp.route("/<path:path>.md/@edit")
+def edit_md(path):
+    """ view markdown file """
+    path = os.path.join(SMDV_HOME, path + ".md")
+    neovim_remote_open(path)
+    return flask.redirect(
+        flask.url_for("blueprint.view_md", path=path[:-3].replace(SMDV_HOME, "/"))
+    )
 
 
 @bp.route("/@queryReload")
@@ -333,9 +391,9 @@ def request_daemon_stop():
 def view_md(path):
     """ view markdown file """
     path = os.path.join(SMDV_HOME, path + ".md")
-    with open(path, "r") as file:
-        md = file.read()
-    html = md2html(md)
+    html = md2html(path=path)
+    if SMDV_EDIT:
+        neovim_remote_open(path)
     return html
 
 
@@ -373,7 +431,7 @@ def view_other(path=""):
     elif not is_binary_file(path):
         with open(path, "r") as file:
             content = file.read()
-        return md2html(f"```\n{content}\n```")
+        return md2html(content=f"```\n{content}\n```")
     else:
         return flask.redirect(
             path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
@@ -404,6 +462,9 @@ if __name__ == "__main__":
         if args.reload:
             reload()
             exit(0)
+
+        if args.edit:
+            SMDV_EDIT = True
 
         # open daemon in subprocess. (or let it fail if a daemon is already running)
         if daemon_status() == "daemon stopped":
