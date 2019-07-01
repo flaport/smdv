@@ -156,6 +156,20 @@ def daemon_stop():
         raise RuntimeError(response)
 
 
+def is_binary_file(filepathname):
+    textchars = (
+        bytearray([7, 8, 9, 10, 12, 13, 27])
+        + bytearray(range(0x20, 0x7F))
+        + bytearray(range(0x80, 0x100))
+    )
+    is_binary_string = lambda bytes: bool(bytes.translate(None, textchars))
+
+    if is_binary_string(open(filepathname, "rb").read(1024)):
+        return True
+    else:
+        return False
+
+
 def reload():
     with open("/tmp/smdv_reload", "w") as file:
         file.write("reload required")
@@ -336,8 +350,14 @@ def view_other(path=""):
         will be opened here.
     """
     path = os.path.join(SMDV_HOME, path)
-    if os.path.isdir(path):
+    if not os.path.exists(path):
+        flask.abort(404)
+    elif os.path.isdir(path):
         return dir2html(path)
+    elif not is_binary_file(path):
+        with open(path, "r") as file:
+            content = file.read()
+        return md2html(f"```\n{content}\n```")
     else:
         return flask.redirect(
             path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
