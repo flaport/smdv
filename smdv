@@ -35,7 +35,10 @@ import flask
 
 HOME = os.path.expanduser("~")
 SMDV_BROWSER = os.environ.get("SMDV_BROWSER", os.environ.get("BROWSER", ""))
-SMDV_CSS = os.environ.get("SMDV_CSS", "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css")
+SMDV_CSS = os.environ.get(
+    "SMDV_CSS",
+    "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
+)
 SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
 SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
 
@@ -71,7 +74,9 @@ group.add_argument(
 
 ## Blueprints.
 
-bp = flask.Blueprint("blueprint", __name__, static_folder=SMDV_HOME, static_url_path="/@static")
+bp = flask.Blueprint(
+    "blueprint", __name__, static_folder=SMDV_HOME, static_url_path="/@static"
+)
 
 
 ## Tools and functions.
@@ -156,7 +161,9 @@ def md2html(s: str):
     """
     stylesheet = SMDV_CSS
     if not stylesheet.startswith("http"):
-        stylesheet = os.path.abspath(os.path.expanduser(stylesheet)).replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
+        stylesheet = os.path.abspath(os.path.expanduser(stylesheet)).replace(
+            SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static"
+        )
     md_out = subprocess.Popen(["printf", s.encode()], stdout=subprocess.PIPE).stdout
     html_out = (
         subprocess.check_output(
@@ -213,25 +220,12 @@ def view_dir(path=""):
         will be opened here.
     """
     path = os.path.join(SMDV_HOME, path)
-    return path
-
-
-@bp.route("/<path:path>.html")
-def view_html(path):
-    """ view html file """
-    path = os.path.join(SMDV_HOME, path + ".html")
-    with open(path, "r") as file:
-        html = file.read()
-    return html
-
-
-@bp.route("/<path:path>.htm")
-def view_htm(path):
-    """ view html file """
-    path = os.path.join(SMDV_HOME, path + ".htm")
-    with open(path, "r") as file:
-        html = file.read()
-    return html
+    if os.path.isdir(path):
+        return path
+    else:
+        return flask.redirect(
+            path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
+        )
 
 
 @bp.route("/<path:path>.md")
