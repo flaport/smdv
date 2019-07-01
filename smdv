@@ -245,7 +245,9 @@ def dir2html(path, full=True):
     """
     if path.endswith("/"):
         path = path[:-1]
-    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}").replace(" ", "%20")
+    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}").replace(
+        " ", "%20"
+    )
     filenames = {f"<h1>{path}</h1>": None}
     if path != SMDV_HOME:
         filenames.update({"<b>⬆️  ..</b>": url(os.path.dirname(path))})
@@ -334,6 +336,20 @@ def view_md(path):
     with open(path, "r") as file:
         md = file.read()
     html = md2html(md)
+    return html
+
+
+@bp.route("/<path:path>.ipynb")
+def view_ipynb(path):
+    """ view markdown file """
+    path = os.path.join(SMDV_HOME, path + ".ipynb")
+    with open(path, "r") as file:
+        try:
+            html = subprocess.check_output(
+                ["jupyter", "nbconvert", path, "--to", "html", "--stdout"]
+            )
+        except subprocess.CalledProcessError:
+            return flask.abort(500)
     return html
 
 
