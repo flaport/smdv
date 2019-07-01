@@ -12,3 +12,267 @@
 
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+""" smdv: a simple markdown viewer """
+
+## Imports.
+
+# standard library
+import os
+import sys
+import time
+import argparse
+import textwrap
+import subprocess
+import webbrowser
+import http.client
+
+# third party
+import flask
+
+
+## Constants.
+
+HOME = os.path.expanduser("~")
+SMDV_BROWSER = os.environ.get("SMDV_BROWSER", os.environ.get("BROWSER", ""))
+SMDV_CSS = os.environ.get(
+    "SMDV_CSS",
+    "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
+)
+SMDV_CSS = (
+    os.path.abspath(os.path.expanduser(SMDV_CSS))
+    if not SMDV_CSS.startswith("http")
+    else SMDV_CSS
+)
+SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
+SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
+
+
+## Argument parser
+parser = argparse.ArgumentParser(description="simple markdown viewer")
+parser.add_argument(
+    "filename", type=str, nargs="?", help="path or file to open with smdv"
+)
+group = parser.add_mutually_exclusive_group()
+group.add_argument(
+    "-d",
+    "--daemon-start",
+    action="store_true",
+    default=False,
+    help="start daemon; all other arguments will be ignored",
+)
+group.add_argument(
+    "-s",
+    "--daemon-status",
+    action="store_true",
+    default=False,
+    help="check daemonstatus",
+)
+group.add_argument(
+    "-D",
+    "--daemon-stop",
+    action="store_true",
+    default=False,
+    help="stop daemon; all other arguments will be ignored",
+)
+
+
+## Blueprints.
+
+bp = flask.Blueprint("blueprint", __name__)
+
+
+## Tools and functions.
+
+
+def browser_open(filename=""):
+    """ spawn a new browser and open the specified file """
+    url = os.path.abspath(os.path.expanduser(args.filename)).replace(
+        SMDV_HOME, f"http://localhost:{SMDV_PORT}"
+    )
+    try:
+        browser = webbrowser.get(SMDV_BROWSER)
+    except:
+        browser = webbrowser
+    browser.open(url)
+
+
+def create_app():
+    """ flask app factory """
+    app = flask.Flask(__name__)
+    app.register_blueprint(bp)
+    return app
+
+
+def daemon_start():
+    print("smdv: starting daemon...")
+    create_app().run(debug=True, port=SMDV_PORT)
+
+
+def daemon_start_background():
+    print("smdv: starting daemon...")
+    with open(os.devnull, "w") as NULL:
+        subprocess.Popen(["smdv", "--daemon-start"], stdout=NULL, stderr=NULL)
+
+
+def daemon_status():
+    connection = http.client.HTTPConnection("127.0.0.1", SMDV_PORT)
+    try:
+        connection.connect()
+        status = "daemon running"
+    except ConnectionRefusedError:
+        status = "daemon stopped"
+    finally:
+        connection.close()
+    print(f"smdv: {status}")
+    return status
+
+
+def daemon_stop():
+    print("smdv: stopping daemon...")
+    connection = http.client.HTTPConnection("127.0.0.1", SMDV_PORT)
+    try:
+        connection.connect()
+        connection.request("GET", "/@daemon-stop")
+        response = connection.getresponse().read().decode()
+    except ConnectionRefusedError:
+        response = "smdv: no daemon to stop."
+    finally:
+        connection.close()
+    if (
+        response == "smdv: server successfully stopped."
+        or response == "smdv: no daemon to stop."
+    ):
+        print(response)
+    else:
+        raise RuntimeError(response)
+
+
+def md2html(s: str):
+    """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
+
+    Args:
+        s: str: the markdown string to convert
+
+    Returns:
+        html: str: the resulting html
+    """
+    md_out = subprocess.Popen(["printf", s.encode()], stdout=subprocess.PIPE).stdout
+    html_out = (
+        subprocess.check_output(
+            ["pandoc", "--from", "gfm", "--to", "html"], stdin=md_out
+        )
+        .decode()
+        .strip()
+    )
+    html = textwrap.dedent(
+        f"""
+        <!DOCTYPE html>
+        <html>
+        <meta http-equiv="refresh" content="1"> <!-- automatically refresh every second -->
+        <head>
+        <link rel="stylesheet" href="{SMDV_CSS}">
+        <style>
+            .markdown-body {{ box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; }}
+            @media (max-width: 767px) {{ .markdown-body {{ padding: 15px; }} }}
+        </style>
+        </head>
+        <body>
+        <article class="markdown-body">
+        {html_out}
+        </body>
+        </html>
+        """
+    )
+    return html
+
+
+## Routes.
+
+
+@bp.route("/@daemon-stop")
+def request_daemon_stop():
+    """ kill flask server """
+    func = flask.request.environ.get("werkzeug.server.shutdown")
+    if func is None:
+        return f"could not stop server on port {SMDV_PORT}."
+    func()
+    return "smdv: server successfully stopped."
+
+
+@bp.route("/")
+@bp.route("/<path:path>")
+def view_dir(path=""):
+    """ view file/directory
+
+    Args:
+        path: the path of the file or directory to show
+
+    Note:
+        This is the default route. Any filetype that has no route of its own
+        will be opened here.
+    """
+    path = os.path.join(SMDV_HOME, path)
+    return path
+
+
+@bp.route("/<path:path>.html")
+def view_html(path):
+    """ view html file """
+    path = os.path.join(SMDV_HOME, path + ".html")
+    with open(path, "r") as file:
+        html = file.read()
+    return html
+
+
+@bp.route("/<path:path>.htm")
+def view_htm(path):
+    """ view html file """
+    path = os.path.join(SMDV_HOME, path + ".htm")
+    with open(path, "r") as file:
+        html = file.read()
+    return html
+
+
+@bp.route("/<path:path>.md")
+def view_md(path):
+    """ view markdown file """
+    path = os.path.join(SMDV_HOME, path + ".md")
+    with open(path, "r") as file:
+        md = file.read()
+    html = md2html(md)
+    return html
+
+
+## Script.
+
+if __name__ == "__main__":
+    try:
+        # parse and validate arguments
+        args = parser.parse_args()
+
+        # daemon (server) control
+
+        if args.daemon_start:
+            daemon_start()
+            exit(0)
+
+        if args.daemon_stop:
+            daemon_stop()
+            exit(0)
+
+        if args.daemon_status:
+            daemon_status()
+            exit(0)
+
+        # open daemon in subprocess. (or let it fail if a daemon is already running)
+        if daemon_status() == "daemon stopped":
+            daemon_start_background()
+            time.sleep(1)  # give time for the daemon to spawn
+
+        # open webbrowser for file:
+        browser_open(args.filename)
+
+    except Exception as e:
+        print(f"{e.__class__.__name__}: {str(e)}", file=sys.stderr)
+        exit(1)
