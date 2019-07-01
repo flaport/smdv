@@ -35,15 +35,7 @@ import flask
 
 HOME = os.path.expanduser("~")
 SMDV_BROWSER = os.environ.get("SMDV_BROWSER", os.environ.get("BROWSER", ""))
-SMDV_CSS = os.environ.get(
-    "SMDV_CSS",
-    "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
-)
-SMDV_CSS = (
-    os.path.abspath(os.path.expanduser(SMDV_CSS))
-    if not SMDV_CSS.startswith("http")
-    else SMDV_CSS
-)
+SMDV_CSS = os.environ.get("SMDV_CSS", "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css")
 SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
 SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
 
@@ -79,7 +71,7 @@ group.add_argument(
 
 ## Blueprints.
 
-bp = flask.Blueprint("blueprint", __name__)
+bp = flask.Blueprint("blueprint", __name__, static_folder=SMDV_HOME, static_url_path="/@static")
 
 
 ## Tools and functions.
@@ -90,11 +82,16 @@ def browser_open(filename=""):
     url = os.path.abspath(os.path.expanduser(args.filename)).replace(
         SMDV_HOME, f"http://localhost:{SMDV_PORT}"
     )
-    try:
-        browser = webbrowser.get(SMDV_BROWSER)
-    except:
-        browser = webbrowser
-    browser.open(url)
+    print(f"smdv: opening browser at {url}")
+    with open(os.devnull, "w") as NULL:
+        if SMDV_BROWSER == "chromium --app":
+            subprocess.Popen(["chromium", f"--app={url}"], stdout=NULL, stderr=NULL)
+        elif SMDV_BROWSER:
+            subprocess.Popen([SMDV_BROWSER, url], stdout=NULL, stderr=NULL)
+        elif subprocess.call(["which", "xdg-open"], stdout=NULL, stderr=NULL) == 0:
+            subprocess.Popen(["xdg-open", url], stdout=NULL, stderr=NULL)
+        else:
+            webbrowser.open(url)
 
 
 def create_app():
@@ -157,6 +154,9 @@ def md2html(s: str):
     Returns:
         html: str: the resulting html
     """
+    stylesheet = SMDV_CSS
+    if not stylesheet.startswith("http"):
+        stylesheet = os.path.abspath(os.path.expanduser(stylesheet)).replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
     md_out = subprocess.Popen(["printf", s.encode()], stdout=subprocess.PIPE).stdout
     html_out = (
         subprocess.check_output(
@@ -171,7 +171,7 @@ def md2html(s: str):
         <html>
         <meta http-equiv="refresh" content="1"> <!-- automatically refresh every second -->
         <head>
-        <link rel="stylesheet" href="{SMDV_CSS}">
+        <link rel="stylesheet" href="{stylesheet}">
         <style>
             .markdown-body {{ box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; }}
             @media (max-width: 767px) {{ .markdown-body {{ padding: 15px; }} }}
