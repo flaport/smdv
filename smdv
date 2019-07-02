@@ -70,7 +70,14 @@ parser.add_argument(
     "-v",
     "--nvim-address",
     default="localhost:9877",
-    help="address or socket to communicate with neovim (requires neovim remote)",
+    help="address or socket to communicate with neovim (requires neovim-remote)",
+)
+parser.add_argument(
+    "-i",
+    "--interactive",
+    action="store_true",
+    default=False,
+    help="launch in interactive mode: each displayed page will also be displayed in neovim (requires neovim-remote)",
 )
 group = parser.add_mutually_exclusive_group()
 group.add_argument(
@@ -388,6 +395,8 @@ def request_server_stop():
 def view_md(path):
     """ iew markdown file """
     path = os.path.join(ARGS.home, path + ".md")
+    if ARGS.interactive:
+        neovim_remote_open(path)
     html = md2html(path=path)
     return html
 
@@ -396,6 +405,8 @@ def view_md(path):
 def view_ipynb(path):
     """ view markdown file """
     path = os.path.join(ARGS.home, path + ".ipynb")
+    if ARGS.interactive:
+        neovim_remote_open(path)
     with open(path, "r") as file:
         try:
             html = subprocess.check_output(
@@ -419,6 +430,8 @@ def view_other(path=""):
         will be opened here.
     """
     path = os.path.join(ARGS.home, path)
+    if ARGS.interactive:
+        neovim_remote_open(path)
     if not os.path.exists(path):
         flask.abort(404)
     elif os.path.isdir(path):
