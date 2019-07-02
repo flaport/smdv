@@ -30,81 +30,89 @@ import http.client
 # third party
 import flask
 
-
-## Constants.
-
-HOME = os.path.expanduser("~")
-SMDV_BROWSER = os.environ.get("SMDV_BROWSER", os.environ.get("BROWSER", ""))
-SMDV_CSS = os.environ.get(
-    "SMDV_CSS",
-    "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
-)
-SMDV_JQUERY = os.environ.get(
-    "SMDV_JQUERY", "https://code.jquery.com/jquery-3.4.1.min.js"
-)
-SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
-SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
-NVIM_LISTEN_ADDRESS = os.environ.get("NVIM_LISTEN_ADDRESS", "localhost:9877")
-SMDV_TERMINAL = os.environ.get("SMDV_TERMINAL", os.environ.get("TERMINAL", ""))
-SMDV_EDIT_MODE = bool(os.environ.get("SMDV_EDIT_MODE", False))
-
-
 ## Argument parser
 parser = argparse.ArgumentParser(description="simple markdown viewer")
 parser.add_argument(
     "filename", type=str, nargs="?", help="path or file to open with smdv"
 )
-group = parser.add_mutually_exclusive_group()
-group.add_argument(
-    "-d",
-    "--daemon-start",
-    action="store_true",
-    default=False,
-    help="start daemon; all other arguments will be ignored",
+parser.add_argument(
+    "-H",
+    "--home",
+    default=os.path.abspath(os.path.expanduser("~")),
+    help="set the root folder of the smdv server",
 )
-group.add_argument(
+parser.add_argument(
+    "-t",
+    "--terminal",
+    default=os.environ.get("TERMINAL", ""),
+    help="default terminal to spawn (uses $TERMINAL by default)",
+)
+parser.add_argument(
+    "-b",
+    "--browser",
+    default=os.environ.get("BROWSER", ""),
+    help="default browser to spawn (uses $BROWSER by default)",
+)
+parser.add_argument(
+    "-p", "--port", default="9876", help="port on which smdv is served."
+)
+parser.add_argument(
+    "--md-css-cdn",
+    default="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
+    help="location of [github flavored] markdown css cdn (can be a local file)",
+)
+parser.add_argument(
+    "--jquery-cdn",
+    default="https://code.jquery.com/jquery-3.4.1.min.js",
+    help="location of jquery cdn (can be a local file)",
+)
+parser.add_argument(
+    "-v",
+    "--nvim-address",
+    default="localhost:9877",
+    help="address or socket to communicate with neovim (requires neovim remote)",
+)
+parser.add_argument(
     "-s",
-    "--daemon-status",
-    action="store_true",
-    default=False,
-    help="check daemonstatus",
-)
-group.add_argument(
-    "-D",
-    "--daemon-stop",
-    action="store_true",
-    default=False,
-    help="stop daemon; all other arguments will be ignored",
-)
-group.add_argument(
-    "-r", "--reload", action="store_true", default=False, help="reload active webpage"
-)
-parser.add_argument(
-    "-E",
-    "--edit-mode",
-    action="store_true",
-    default=False,
-    help="each time a markdown page is viewed, immediately also open the source in neovim remote",
-)
-parser.add_argument(
-    "-S",
     "--sync",
     action="store_true",
     default=False,
     help="sync new filename in current browser",
 )
-parser.add_argument(
-    "-v",
-    "--nvim-address",
-    default=NVIM_LISTEN_ADDRESS,
-    help="address or socket to communicate with neovim (requires neovim remote)"
+group = parser.add_mutually_exclusive_group()
+group.add_argument(
+    "--start",
+    action="store_true",
+    default=False,
+    help="check server status",
 )
+group.add_argument(
+    "--stop",
+    action="store_true",
+    default=False,
+    help="stop server; useful for a backgrounded process. ",
+)
+group.add_argument(
+    "--status",
+    action="store_true",
+    default=False,
+    help="check server status",
+)
+group.add_argument(
+    "-B",
+    "--background",
+    action="store_true",
+    default=False,
+    help="start server as a backgrounded process",
+)
+
+ARGS = parser.parse_args()
 
 
 ## Blueprints.
 
 bp = flask.Blueprint(
-    "blueprint", __name__, static_folder=SMDV_HOME, static_url_path="/@static"
+    "blueprint", __name__, static_folder=ARGS.home, static_url_path="/@static"
 )
 
 
@@ -114,16 +122,16 @@ bp = flask.Blueprint(
 def browser_open(filename=""):
     """ spawn a new browser and open the specified file """
     if filename.startswith("/"):
-        filename = f"{SMDV_HOME}{filename}"
+        filename = f"{ARGS.home}{filename}"
     url = os.path.abspath(os.path.expanduser(filename)).replace(
-        SMDV_HOME, f"http://localhost:{SMDV_PORT}"
+        ARGS.home, f"http://localhost:{ARGS.port}"
     )
     print(f"smdv: opening browser at {url}")
     with open(os.devnull, "w") as NULL:
-        if SMDV_BROWSER == "chromium --app":
+        if ARGS.browser == "chromium --app":
             subprocess.Popen(["chromium", f"--app={url}"], stdout=NULL, stderr=NULL)
-        elif SMDV_BROWSER:
-            subprocess.Popen([SMDV_BROWSER, url], stdout=NULL, stderr=NULL)
+        elif ARGS.browser:
+            subprocess.Popen([ARGS.browser, url], stdout=NULL, stderr=NULL)
         elif subprocess.call(["which", "xdg-open"], stdout=NULL, stderr=NULL) == 0:
             subprocess.Popen(["xdg-open", url], stdout=NULL, stderr=NULL)
         else:
@@ -137,44 +145,38 @@ def create_app():
     return app
 
 
-def daemon_start():
-    print("smdv: starting daemon...")
-    create_app().run(debug=True, port=SMDV_PORT, threaded=True)
+def server_start():
+    print("smdv: starting server...")
+    create_app().run(debug=False, port=ARGS.port, threaded=True)
 
 
-def daemon_start_background():
-    print("smdv: starting daemon...")
-    with open(os.devnull, "w") as NULL:
-        subprocess.Popen(["smdv", "--daemon-start"], stdout=NULL, stderr=NULL)
-
-
-def daemon_status():
-    connection = http.client.HTTPConnection("127.0.0.1", SMDV_PORT)
+def server_status():
+    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
     try:
         connection.connect()
-        status = "daemon running"
+        status = "server running"
     except ConnectionRefusedError:
-        status = "daemon stopped"
+        status = "server stopped"
     finally:
         connection.close()
     print(f"smdv: {status}")
     return status
 
 
-def daemon_stop():
-    print("smdv: stopping daemon...")
-    connection = http.client.HTTPConnection("127.0.0.1", SMDV_PORT)
+def server_stop():
+    print("smdv: stopping server...")
+    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
     try:
         connection.connect()
-        connection.request("GET", "/@daemon-stop")
+        connection.request("GET", "/@server-stop")
         response = connection.getresponse().read().decode()
     except ConnectionRefusedError:
-        response = "smdv: no daemon to stop."
+        response = "smdv: no server to stop."
     finally:
         connection.close()
     if (
         response == "smdv: server successfully stopped."
-        or response == "smdv: no daemon to stop."
+        or response == "smdv: no server to stop."
     ):
         print(response)
     else:
@@ -186,19 +188,11 @@ def neovim_remote_open(filename=""):
     if not os.path.exists(path):
         return
     result = subprocess.call(
-        ["nvr", "-s", "--nostart", "--servername", NVIM_LISTEN_ADDRESS, path]
+        ["nvr", "-s", "--nostart", "--servername", ARGS.nvim_address, path]
     )
     if result != 0:
         subprocess.Popen(
-            [
-                SMDV_TERMINAL,
-                "-e",
-                "nvr",
-                "-s",
-                "--servername",
-                NVIM_LISTEN_ADDRESS,
-                path,
-            ]
+            [ARGS.terminal, "-e", "nvr", "-s", "--servername", ARGS.nvim_address, path]
         )
 
 
@@ -216,11 +210,6 @@ def is_binary_file(filepathname):
         return False
 
 
-def reload():
-    with open("/tmp/smdv", "w") as file:
-        file.write("reload required")
-
-
 ## Converters.
 
 
@@ -233,15 +222,15 @@ def body2html(body: str):
     Returns:
         html: str: the resulting html
     """
-    stylesheet = SMDV_CSS
+    stylesheet = ARGS.md_css_cdn
     if not stylesheet.startswith("http"):
         stylesheet = os.path.abspath(os.path.expanduser(stylesheet)).replace(
-            SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static"
+            ARGS.home, f"http://localhost:{ARGS.port}/@static"
         )
-    jquery = SMDV_JQUERY
+    jquery = ARGS.jquery_cdn
     if not jquery.startswith("http"):
         jquery = os.path.abspath(os.path.expanduser(jquery)).replace(
-            SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static"
+            ARGS.home, f"http://localhost:{ARGS.port}/@static"
         )
     html = textwrap.dedent(
         f"""
@@ -292,11 +281,11 @@ def dir2html(path, full=True):
     """
     if path.endswith("/"):
         path = path[:-1]
-    url = lambda path: path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}").replace(
+    url = lambda path: path.replace(ARGS.home, f"http://localhost:{ARGS.port}").replace(
         " ", "%20"
     )
     filenames = {f"<h1>{path}</h1>": None}
-    if path != SMDV_HOME:
+    if path != ARGS.home:
         filenames.update({"<b>⬆️  ..</b>": url(os.path.dirname(path))})
     listdir = sorted([p for p in os.listdir(path)], key=str.upper)
     md_html = ""
@@ -375,11 +364,11 @@ def md2html(content: str = "", path: str = "", full=True):
 
 @bp.route("/<path:path>.md/@edit")
 def edit_md(path):
-    """ view markdown file """
-    path = os.path.join(SMDV_HOME, path + ".md")
+    """ edit markdown file """
+    path = os.path.join(ARGS.home, path + ".md")
     neovim_remote_open(path)
     return flask.redirect(
-        flask.url_for("blueprint.view_md", path=path[:-3].replace(SMDV_HOME, "/"))
+        flask.url_for("blueprint.view_md", path=path[:-3].replace(ARGS.home, "/"))
     )
 
 
@@ -395,12 +384,12 @@ def query_reload():
         return ""
 
 
-@bp.route("/@daemon-stop")
-def request_daemon_stop():
+@bp.route("/@server-stop")
+def request_server_stop():
     """ kill flask server """
     func = flask.request.environ.get("werkzeug.server.shutdown")
     if func is None:
-        return f"could not stop server on port {SMDV_PORT}."
+        return f"could not stop server on port {ARGS.port}."
     func()
     return "smdv: server successfully stopped."
 
@@ -408,17 +397,15 @@ def request_daemon_stop():
 @bp.route("/<path:path>.md")
 def view_md(path):
     """ iew markdown file """
-    path = os.path.join(SMDV_HOME, path + ".md")
+    path = os.path.join(ARGS.home, path + ".md")
     html = md2html(path=path)
-    if SMDV_EDIT_MODE:
-        neovim_remote_open(path)
     return html
 
 
 @bp.route("/<path:path>.ipynb")
 def view_ipynb(path):
     """ view markdown file """
-    path = os.path.join(SMDV_HOME, path + ".ipynb")
+    path = os.path.join(ARGS.home, path + ".ipynb")
     with open(path, "r") as file:
         try:
             html = subprocess.check_output(
@@ -441,7 +428,7 @@ def view_other(path=""):
         This is the default route. Any filetype that has no route of its own
         will be opened here.
     """
-    path = os.path.join(SMDV_HOME, path)
+    path = os.path.join(ARGS.home, path)
     if not os.path.exists(path):
         flask.abort(404)
     elif os.path.isdir(path):
@@ -452,7 +439,7 @@ def view_other(path=""):
         return md2html(content=f"```\n{content}\n```")
     else:
         return flask.redirect(
-            path.replace(SMDV_HOME, f"http://localhost:{SMDV_PORT}/@static")
+            path.replace(ARGS.home, f"http://localhost:{ARGS.port}/@static")
         )
 
 
@@ -460,54 +447,30 @@ def view_other(path=""):
 
 if __name__ == "__main__":
     try:
-        # parse and validate arguments
-        args = parser.parse_args()
-
-        # daemon (server) control
-
-        if args.daemon_start:
-            daemon_start()
+        # if asked to stop server, stop server and exit
+        if ARGS.stop:
+            server_stop()
             exit(0)
 
-        if args.daemon_stop:
-            daemon_stop()
+        # if asked the status of the server, return status and exit
+        if ARGS.status:
+            server_status()
             exit(0)
 
-        if args.daemon_status:
-            daemon_status()
-            exit(0)
-
-        if args.reload:
-            reload()
-            exit(0)
-
-        if args.edit_mode:
-            SMDV_EDIT_MODE = True
-
-        NVIM_LISTEN_ADDRESS = args.nvim_address
-
-        # open daemon in subprocess. (or let it fail if a daemon is already running)
-        if daemon_status() == "daemon stopped":
-            daemon_start_background()
-            time.sleep(1)  # give time for the daemon to spawn
-
-        # remove tempfile if it exists
-        if os.path.exists("/tmp/smdv"):
-            os.remove("/tmp/smdv")
-
-        # open webbrowser for file:
-        filename = args.filename
-        if filename == None:
-            filename = SMDV_HOME
-        filename = os.path.abspath(os.path.expanduser(filename)).replace(SMDV_HOME, "")
+        # cleanup filename
+        filename = ARGS.filename
+        if filename is None:
+            filename = ARGS.home
+        filename = os.path.abspath(os.path.expanduser(filename)).replace(ARGS.home, "")
         if filename == "":
             filename = "/"
 
-        if not args.sync:
-            browser_open(filename)
-        else:
-            with open("/tmp/smdv", "w") as file:
-                file.write(filename)
+        # open a browser at the current filename. Most browsers will wait for 
+        # a few miliseconds to get a reply from the server...
+        browser_open(filename)
+
+        # ... this is just in time to start the server:
+        server_start()
 
     except Exception as e:
         print(f"{e.__class__.__name__}: {str(e)}", file=sys.stderr)
