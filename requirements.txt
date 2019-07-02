@@ -1,1 +1,3 @@
 flask
+neovim
+neovim-remote
