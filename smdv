@@ -44,9 +44,9 @@ SMDV_JQUERY = os.environ.get(
 )
 SMDV_HOME = os.path.abspath(os.path.expanduser(os.environ.get("SMDV_HOME", HOME)))
 SMDV_PORT = os.environ.get("SMDV_PORT", "9876")
-SMDV_NVR_PORT = os.environ.get("SMDV_NVR_PORT", "9877")
+NVIM_LISTEN_ADDRESS = os.environ.get("NVIM_LISTEN_ADDRESS", "localhost:9877")
 SMDV_TERMINAL = os.environ.get("SMDV_TERMINAL", os.environ.get("TERMINAL", ""))
-SMDV_EDIT = bool(os.environ.get("SMDV_EDIT", False))
+SMDV_EDIT_MODE = bool(os.environ.get("SMDV_EDIT_MODE", False))
 
 
 ## Argument parser
@@ -80,11 +80,24 @@ group.add_argument(
     "-r", "--reload", action="store_true", default=False, help="reload active webpage"
 )
 parser.add_argument(
-    "-e",
-    "--edit",
+    "-E",
+    "--edit-mode",
     action="store_true",
     default=False,
     help="each time a markdown page is viewed, immediately also open the source in neovim remote",
+)
+parser.add_argument(
+    "-S",
+    "--sync",
+    action="store_true",
+    default=False,
+    help="sync new filename in current browser",
+)
+parser.add_argument(
+    "-v",
+    "--nvim-address",
+    default=NVIM_LISTEN_ADDRESS,
+    help="address or socket to communicate with neovim (requires neovim remote)"
 )
 
 
@@ -100,6 +113,8 @@ bp = flask.Blueprint(
 
 def browser_open(filename=""):
     """ spawn a new browser and open the specified file """
+    if filename.startswith("/"):
+        filename = f"{SMDV_HOME}{filename}"
     url = os.path.abspath(os.path.expanduser(filename)).replace(
         SMDV_HOME, f"http://localhost:{SMDV_PORT}"
     )
@@ -171,7 +186,7 @@ def neovim_remote_open(filename=""):
     if not os.path.exists(path):
         return
     result = subprocess.call(
-        ["nvr", "-s", "--nostart", "--servername", f"localhost:{SMDV_NVR_PORT}", path]
+        ["nvr", "-s", "--nostart", "--servername", NVIM_LISTEN_ADDRESS, path]
     )
     if result != 0:
         subprocess.Popen(
@@ -181,7 +196,7 @@ def neovim_remote_open(filename=""):
                 "nvr",
                 "-s",
                 "--servername",
-                f"localhost:{SMDV_NVR_PORT}",
+                NVIM_LISTEN_ADDRESS,
                 path,
             ]
         )
@@ -202,7 +217,7 @@ def is_binary_file(filepathname):
 
 
 def reload():
-    with open("/tmp/smdv_reload", "w") as file:
+    with open("/tmp/smdv", "w") as file:
         file.write("reload required")
 
 
@@ -241,18 +256,19 @@ def body2html(body: str):
         <script src="{jquery}"></script>
         </head>
         <body>
-        <article class="markdown-body">
+        <article class="markdown-body" id="content">
         {body}
         </article>
         <script>
             function queryReload() {{
             $.ajax({{
-               url: "/@queryReload",
+               url: "/@query-reload",
                success: function(data) {{
-                      if (data == "true")
-                         location.reload();
-                      else
-                         setTimeout(queryReload, 1000);
+                  if (data)
+                     // $('#content').html(data);
+                     // location.reload()
+                     location.href = data
+                 setTimeout(queryReload, 1000);
                }}
             }});
             }}
@@ -367,14 +383,16 @@ def edit_md(path):
     )
 
 
-@bp.route("/@queryReload")
+@bp.route("/@query-reload")
 def query_reload():
     """ query the server if the current page needs a reload """
-    if os.path.exists("/tmp/smdv_reload"):
-        os.remove("/tmp/smdv_reload")
-        return "true"
+    if os.path.exists("/tmp/smdv"):
+        with open("/tmp/smdv", "r") as file:
+            content = file.read()
+        os.remove("/tmp/smdv")
+        return content
     else:
-        return "false"
+        return ""
 
 
 @bp.route("/@daemon-stop")
@@ -389,10 +407,10 @@ def request_daemon_stop():
 
 @bp.route("/<path:path>.md")
 def view_md(path):
-    """ view markdown file """
+    """ iew markdown file """
     path = os.path.join(SMDV_HOME, path + ".md")
     html = md2html(path=path)
-    if SMDV_EDIT:
+    if SMDV_EDIT_MODE:
         neovim_remote_open(path)
     return html
 
@@ -463,16 +481,33 @@ if __name__ == "__main__":
             reload()
             exit(0)
 
-        if args.edit:
-            SMDV_EDIT = True
+        if args.edit_mode:
+            SMDV_EDIT_MODE = True
+
+        NVIM_LISTEN_ADDRESS = args.nvim_address
 
         # open daemon in subprocess. (or let it fail if a daemon is already running)
         if daemon_status() == "daemon stopped":
             daemon_start_background()
             time.sleep(1)  # give time for the daemon to spawn
 
+        # remove tempfile if it exists
+        if os.path.exists("/tmp/smdv"):
+            os.remove("/tmp/smdv")
+
         # open webbrowser for file:
-        browser_open(args.filename)
+        filename = args.filename
+        if filename == None:
+            filename = SMDV_HOME
+        filename = os.path.abspath(os.path.expanduser(filename)).replace(SMDV_HOME, "")
+        if filename == "":
+            filename = "/"
+
+        if not args.sync:
+            browser_open(filename)
+        else:
+            with open("/tmp/smdv", "w") as file:
+                file.write(filename)
 
     except Exception as e:
         print(f"{e.__class__.__name__}: {str(e)}", file=sys.stderr)

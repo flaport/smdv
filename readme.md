@@ -10,4 +10,5 @@ a **s**imple **m**ark**d**own **v**iewer for linux.
 
 ### Optional
   - [Jupyter](http://jupyter.org) (to view jupyter notebooks) [`apt install jupyter` | `pacman -S jupyter` | ... ]
+  - [Neovim Remote](https://github.com/mhinz/neovim-remote) (to sync currently open files with neovim)
 
