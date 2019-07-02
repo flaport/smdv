@@ -81,10 +81,7 @@ parser.add_argument(
 )
 group = parser.add_mutually_exclusive_group()
 group.add_argument(
-    "--start",
-    action="store_true",
-    default=False,
-    help="check server status",
+    "--start", action="store_true", default=False, help="check server status"
 )
 group.add_argument(
     "--stop",
@@ -93,10 +90,7 @@ group.add_argument(
     help="stop server; useful for a backgrounded process. ",
 )
 group.add_argument(
-    "--status",
-    action="store_true",
-    default=False,
-    help="check server status",
+    "--status", action="store_true", default=False, help="check server status"
 )
 group.add_argument(
     "-B",
@@ -323,24 +317,32 @@ def md2html(content: str = "", path: str = "", full=True):
     """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
 
     Args:
-        content: str: the markdown string to convert; mutually exclusive with path
-        path: str: the file path of the file to convert; mutually exclusive with content
+        content: str: the markdown string to convert
+        path: str: the file path of the file to convert
 
     Returns:
         html: str: the resulting html
 
-    """
-    if content and path or (not content and not path):
-        raise ValueError("content OR path expected. Not both")
+    Note:
+        if content is given, it will display that in stead of the
+        content in the file given by path.
 
+    """
     if path.endswith("/"):
         path = path[:-1]
 
     dirpath = os.path.dirname(path)
-    if path:
+    if path and not content:
         with open(path, "r") as file:
             content = file.read()
-        content = f"[edit]({f'{os.path.basename(path)}/@edit'})\n{content}"
+    if path:
+        path = path.replace(ARGS.home, "")
+        content = (
+            f"# {ARGS.home+path}\n"
+            f"[🖊 edit]({f'{os.path.basename(path)}/@edit'})&nbsp;&nbsp;&nbsp;&nbsp;"
+            f"[📁 dir]({f'{os.path.dirname(path)}'})\n"
+            f"{content}"
+        )
 
     md_out = subprocess.Popen(
         ["printf", content.encode()], stdout=subprocess.PIPE
@@ -362,14 +364,11 @@ def md2html(content: str = "", path: str = "", full=True):
 ## Routes.
 
 
-@bp.route("/<path:path>.md/@edit")
-def edit_md(path):
+@bp.route("/<path:path>/@edit")
+def edit(path):
     """ edit markdown file """
-    path = os.path.join(ARGS.home, path + ".md")
-    neovim_remote_open(path)
-    return flask.redirect(
-        flask.url_for("blueprint.view_md", path=path[:-3].replace(ARGS.home, "/"))
-    )
+    neovim_remote_open(os.path.join(ARGS.home, path))
+    return flask.redirect(f"/{path}")
 
 
 @bp.route("/@query-reload")
@@ -436,7 +435,7 @@ def view_other(path=""):
     elif not is_binary_file(path):
         with open(path, "r") as file:
             content = file.read()
-        return md2html(content=f"```\n{content}\n```")
+        return md2html(content=f"```\n{content}\n```", path=path)
     else:
         return flask.redirect(
             path.replace(ARGS.home, f"http://localhost:{ARGS.port}/@static")
@@ -465,7 +464,7 @@ if __name__ == "__main__":
         if filename == "":
             filename = "/"
 
-        # open a browser at the current filename. Most browsers will wait for 
+        # open a browser at the current filename. Most browsers will wait for
         # a few miliseconds to get a reply from the server...
         browser_open(filename)
 
