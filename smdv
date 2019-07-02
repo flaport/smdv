@@ -72,13 +72,6 @@ parser.add_argument(
     default="localhost:9877",
     help="address or socket to communicate with neovim (requires neovim remote)",
 )
-parser.add_argument(
-    "-s",
-    "--sync",
-    action="store_true",
-    default=False,
-    help="sync new filename in current browser",
-)
 group = parser.add_mutually_exclusive_group()
 group.add_argument(
     "--start", action="store_true", default=False, help="check server status"
@@ -92,12 +85,12 @@ group.add_argument(
 group.add_argument(
     "--status", action="store_true", default=False, help="check server status"
 )
-group.add_argument(
-    "-B",
-    "--background",
+parser.add_argument(
+    "-s",
+    "--sync",
     action="store_true",
     default=False,
-    help="start server as a backgrounded process",
+    help="sync new filename in current browser (requires a running server)",
 )
 
 ARGS = parser.parse_args()
@@ -181,13 +174,9 @@ def neovim_remote_open(filename=""):
     path = os.path.abspath(os.path.expanduser(filename))
     if not os.path.exists(path):
         return
-    result = subprocess.call(
-        ["nvr", "-s", "--nostart", "--servername", ARGS.nvim_address, path]
+    subprocess.Popen(
+        [ARGS.terminal, "-e", "nvr", "-s", "--servername", ARGS.nvim_address, path]
     )
-    if result != 0:
-        subprocess.Popen(
-            [ARGS.terminal, "-e", "nvr", "-s", "--servername", ARGS.nvim_address, path]
-        )
 
 
 def is_binary_file(filepathname):
@@ -285,9 +274,7 @@ def dir2html(path, full=True):
     md_html = ""
     for readme in ["README.md", "Readme.md", "readme.md"]:
         if readme in listdir:
-            with open(os.path.join(path, readme), "r") as file:
-                md_content = file.read()
-            md_html = md2html(md_content, full=False)
+            md_html = md2html(path=os.path.join(path, readme), full=False)
     listdir = [os.path.join(path, p) for p in listdir]
     listdir = [p for p in listdir if os.path.isdir(p)] + [
         p for p in listdir if not os.path.isdir(p)
@@ -310,6 +297,7 @@ def dir2html(path, full=True):
     if md_html:
         html = html + "<br><br><hr><br>" + md_html
     html = body2html(html)
+
     return html
 
 
@@ -335,7 +323,7 @@ def md2html(content: str = "", path: str = "", full=True):
     if path and not content:
         with open(path, "r") as file:
             content = file.read()
-    if path:
+    if path and full:
         path = path.replace(ARGS.home, "")
         content = (
             f"# {ARGS.home+path}\n"
@@ -355,6 +343,9 @@ def md2html(content: str = "", path: str = "", full=True):
         .decode()
         .strip()
     )
+    if path: # fix urls.
+        curdir = os.path.dirname(path).replace(ARGS.home, "")
+        html_out = html_out.replace('<img src="', f'<img src="/@static{curdir}/')
     if not full:
         return html_out
     html = body2html(html_out)
@@ -463,6 +454,12 @@ if __name__ == "__main__":
         filename = os.path.abspath(os.path.expanduser(filename)).replace(ARGS.home, "")
         if filename == "":
             filename = "/"
+
+        # sync current filename and exit (requires a running server)
+        if ARGS.sync:
+            with open("/tmp/smdv", "w") as file:
+                file.write(filename)
+            exit(0)
 
         # open a browser at the current filename. Most browsers will wait for
         # a few miliseconds to get a reply from the server...
