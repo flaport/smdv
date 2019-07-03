@@ -383,7 +383,7 @@ def md2html(content: str = "", path: str = "", full=True):
     )
     if path: # fix urls.
         curdir = os.path.dirname(path).replace(ARGS.home, "")
-        html_out = html_out.replace('<img src="', f'<img src="/@static{curdir}/')
+        html_out = html_out.replace('<img src="', f'<img src="/@static{curdir}/').replace("@static//","@static/")
     if not full:
         return html_out
     html = body2html(html_out)
