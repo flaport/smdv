@@ -506,6 +506,11 @@ if __name__ == "__main__":
                 file.write(filename)
             exit(0)
 
+        # kill other instance of smdv at this port if there is one running:
+        if inet_socket_in_use(f"127.0.0.1:{ARGS.port}"):
+            subprocess.call(["smdv", "--port", f"{ARGS.port}", "--stop"])
+            time.sleep(1) # give some time to kill the old server
+
         # open a browser at the current filename. Most browsers will wait for
         # a few miliseconds to get a reply from the server...
         browser_open(filename)
