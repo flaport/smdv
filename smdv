@@ -102,6 +102,7 @@ parser.add_argument(
 )
 
 ARGS = parser.parse_args()
+ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
 
 
 ## Blueprints.
@@ -311,7 +312,11 @@ def dir2html(path, full=True):
     url = lambda path: path.replace(ARGS.home, f"http://127.0.0.1:{ARGS.port}").replace(
         " ", "%20"
     )
-    filenames = {f"<h1>{path}</h1>": None}
+    if ARGS.home == os.path.expanduser("~"):
+        displayed_path = path.replace(os.path.expanduser("~"), "~")
+    else:
+        displayed_path = path.replace(os.path.dirname(ARGS.home)+"/", "")
+    filenames = {f"<h1>{displayed_path}/</h1>": None}
     if path != ARGS.home:
         filenames.update({"<b>⬆️  ..</b>": url(os.path.dirname(path))})
     listdir = sorted([p for p in os.listdir(path)], key=str.upper)
@@ -369,8 +374,12 @@ def md2html(content: str = "", path: str = "", full=True):
             content = file.read()
     if path and full:
         path = path.replace(ARGS.home, "")
+        if ARGS.home == os.path.expanduser("~"):
+            displayed_path = (ARGS.home+path).replace(os.path.expanduser("~"), "~")
+        else:
+            displayed_path = (ARGS.home+path).replace(os.path.dirname(ARGS.home)+"/", "")
         content = (
-            f"# {ARGS.home+path}\n"
+            f"# {displayed_path}\n"
             f"[🖊 edit]({f'{os.path.basename(path)}/@edit'})&nbsp;&nbsp;&nbsp;&nbsp;"
             f"[📁 dir]({f'{os.path.dirname(path)}'})\n"
             f"{content}"
@@ -415,6 +424,9 @@ def query_reload():
         with open("/tmp/smdv", "r") as file:
             content = file.read()
         os.remove("/tmp/smdv")
+        content = content.replace(ARGS.home, "")
+        if content == "":
+            content = "/"
         return content
     else:
         return ""
@@ -504,14 +516,15 @@ if __name__ == "__main__":
         filename = ARGS.filename
         if filename is None:
             filename = ARGS.home
-        filename = os.path.abspath(os.path.expanduser(filename)).replace(ARGS.home, "")
+        full_filename = os.path.abspath(os.path.expanduser(filename))
+        filename = full_filename.replace(ARGS.home, "")
         if filename == "":
             filename = "/"
 
         # sync current filename and exit (requires a running server)
         if ARGS.sync:
             with open("/tmp/smdv", "w") as file:
-                file.write(filename)
+                file.write(full_filename)
             exit(0)
 
         # kill other instance of smdv at this port if there is one running:
