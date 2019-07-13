@@ -13,7 +13,9 @@ a **s**imple **m**ark**d**own **v**iewer for linux.
   - [Jupyter](http://jupyter.org) (to view jupyter notebooks) [`pip3 install jupyter` | `apt install jupyter` | `pacman -S jupyter` | ... ]
 
 ## Installation
-Install the dependencies and place the `smdv` file somewhere in your path.
+```
+    pip3 install smdv
+```
 
 ## Neovim compatibility
 This viewer was made with neovim compatibility in mind. With the use of `neovim-remote`,

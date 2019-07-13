@@ -338,8 +338,6 @@ def main():
             exit(0)
 
         # cleanup filename
-        print(sys.argv)
-        print(ARGS.filename)
         filename = ARGS.filename
         if filename is None:
             filename = ARGS.home
