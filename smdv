@@ -15,233 +15,25 @@
 
 """ smdv: a simple markdown viewer """
 
-## Imports.
-
-# standard library
+# standard library imports
 import os
 import sys
 import time
 import socket
+import typing
 import argparse
 import textwrap
 import subprocess
 import webbrowser
 import http.client
 
-# third party
+# third party imports
 import flask
-
-## Argument parser
-parser = argparse.ArgumentParser(description="simple markdown viewer")
-parser.add_argument(
-    "filename", type=str, nargs="?", help="path or file to open with smdv"
-)
-parser.add_argument(
-    "-H",
-    "--home",
-    default=os.path.abspath(os.path.expanduser("~")),
-    help="set the root folder of the smdv server",
-)
-parser.add_argument(
-    "-t",
-    "--terminal",
-    default=os.environ.get("TERMINAL", ""),
-    help="default terminal to spawn (uses $TERMINAL by default)",
-)
-parser.add_argument(
-    "-b",
-    "--browser",
-    default=os.environ.get("BROWSER", ""),
-    help="default browser to spawn (uses $BROWSER by default)",
-)
-parser.add_argument(
-    "-p", "--port", default="9876", help="port on which smdv is served."
-)
-parser.add_argument(
-    "--md-css-cdn",
-    default="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
-    help="location of [github flavored] markdown css cdn (can be a local file)",
-)
-parser.add_argument(
-    "--jquery-cdn",
-    default="https://code.jquery.com/jquery-3.4.1.min.js",
-    help="location of jquery cdn (can be a local file)",
-)
-parser.add_argument(
-    "-v",
-    "--nvim-address",
-    default="127.0.0.1:9877",
-    help="address or socket to communicate with neovim (requires neovim-remote)",
-)
-parser.add_argument(
-    "-i",
-    "--interactive",
-    action="store_true",
-    default=False,
-    help="launch in interactive mode: each displayed page will also be displayed in neovim (requires neovim-remote)",
-)
-group = parser.add_mutually_exclusive_group()
-group.add_argument(
-    "--start", action="store_true", default=False, help="check server status"
-)
-group.add_argument(
-    "--stop",
-    action="store_true",
-    default=False,
-    help="stop server; useful for a backgrounded process. ",
-)
-group.add_argument(
-    "--status", action="store_true", default=False, help="check server status"
-)
-parser.add_argument(
-    "-s",
-    "--sync",
-    action="store_true",
-    default=False,
-    help="sync new filename in current browser (requires a running server)",
-)
-
-ARGS = parser.parse_args()
-ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
+import werkzeug
 
 
-## Blueprints.
-
-bp = flask.Blueprint(
-    "blueprint", __name__, static_folder=ARGS.home, static_url_path="/@static"
-)
-
-
-## Tools and functions.
-
-
-def browser_open(filename=""):
-    """ spawn a new browser and open the specified file """
-    if filename.startswith("/"):
-        filename = f"{ARGS.home}{filename}"
-    url = os.path.abspath(os.path.expanduser(filename)).replace(
-        ARGS.home, f"http://127.0.0.1:{ARGS.port}"
-    )
-    print(f"smdv: opening browser at {url}")
-    with open(os.devnull, "w") as NULL:
-        if ARGS.browser == "chromium --app":
-            subprocess.Popen(["chromium", f"--app={url}"], stdout=NULL, stderr=NULL)
-        elif ARGS.browser:
-            subprocess.Popen([ARGS.browser, url], stdout=NULL, stderr=NULL)
-        elif subprocess.call(["which", "xdg-open"], stdout=NULL, stderr=NULL) == 0:
-            subprocess.Popen(["xdg-open", url], stdout=NULL, stderr=NULL)
-        else:
-            webbrowser.open(url)
-
-
-def create_app():
-    """ flask app factory """
-    app = flask.Flask(__name__)
-    app.register_blueprint(bp)
-    return app
-
-
-def server_start():
-    print(f"smdv: server started at http://127.0.0.1:{ARGS.port}")
-    old_stdout, old_stderr = sys.stdout, sys.stderr
-    with open(os.devnull, "w") as devnul:
-        sys.stdout, sys.stderr = devnul, devnul
-        create_app().run(debug=False, port=ARGS.port, threaded=True)
-    sys.stdout, sys.stderr = old_stdout, old_stderr
-
-
-def server_status():
-    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
-    try:
-        connection.connect()
-        status = "server running"
-    except ConnectionRefusedError:
-        status = "server stopped"
-    finally:
-        connection.close()
-    print(f"smdv: {status}")
-    return status
-
-
-def server_stop():
-    print("smdv: stopping server...")
-    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
-    try:
-        connection.connect()
-        connection.request("GET", "/@server-stop")
-        response = connection.getresponse().read().decode()
-    except ConnectionRefusedError:
-        response = "smdv: no server to stop."
-    finally:
-        connection.close()
-    if (
-        response == "smdv: server successfully stopped."
-        or response == "smdv: no server to stop."
-    ):
-        print(response)
-    else:
-        raise RuntimeError(response)
-
-
-def neovim_remote_open(filename=""):
-    path = os.path.abspath(os.path.expanduser(filename))
-    if not os.path.exists(path):
-        return
-    socket = ARGS.nvim_address.strip()
-    if not ":" in socket:  # unix socket
-        dirname = os.path.dirname(socket)
-        if not os.path.exists(dirname):
-            os.makedirs(dirname)
-    if socket_in_use(socket):
-        subprocess.Popen(["nvr", "-s", "--nostart", "--servername", socket, path])
-    else:
-        subprocess.Popen(
-            [ARGS.terminal, "-e", "nvr", "-s", "--servername", socket, path]
-        )
-
-
-def is_binary_file(filepathname):
-    textchars = (
-        bytearray([7, 8, 9, 10, 12, 13, 27])
-        + bytearray(range(0x20, 0x7F))
-        + bytearray(range(0x80, 0x100))
-    )
-    is_binary_string = lambda bytes: bool(bytes.translate(None, textchars))
-
-    if is_binary_string(open(filepathname, "rb").read(1024)):
-        return True
-    else:
-        return False
-
-
-def unix_socket_in_use(address):
-    if os.path.exists(address):
-        return True
-    return False
-
-
-def inet_socket_in_use(address):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host, port = address.split(":")
-    result = sock.connect_ex((host, int(port)))
-    if result == 0:
-        return True
-    else:
-        return False
-    sock.close()
-
-
-def socket_in_use(address):
-    if ":" in address:
-        return inet_socket_in_use(address)
-    else:
-        return unix_socket_in_use(address)
-
-
-## Converters.
-
-
-def body2html(body: str):
+# add header to html body
+def body2html(body: str) -> str:
     """ convert a html body to full html
 
     Args:
@@ -298,11 +90,161 @@ def body2html(body: str):
     return html
 
 
-def dir2html(path, full=True):
+# open a new browser
+def browser_open(filename: str = ""):
+    """ spawn a new browser and open the specified file
+
+    Args:
+        filename: str="": the filename to open the browser at.
+    """
+    if filename.startswith("/"):
+        filename = f"{ARGS.home}{filename}"
+    url = os.path.abspath(os.path.expanduser(filename)).replace(
+        ARGS.home, f"http://127.0.0.1:{ARGS.port}"
+    )
+    print(f"smdv: opening browser at {url}")
+    with open(os.devnull, "w") as NULL:
+        if ARGS.browser == "chromium --app":
+            subprocess.Popen(["chromium", f"--app={url}"], stdout=NULL, stderr=NULL)
+        elif ARGS.browser:
+            subprocess.Popen([ARGS.browser, url], stdout=NULL, stderr=NULL)
+        elif subprocess.call(["which", "xdg-open"], stdout=NULL, stderr=NULL) == 0:
+            subprocess.Popen(["xdg-open", url], stdout=NULL, stderr=NULL)
+        else:
+            webbrowser.open(url)
+
+
+# app factory
+def create_app() -> flask.Flask:
+    """ flask app factory
+
+    Returns:
+        app: flask.Flask: the flask app.
+    """
+
+    app = flask.Flask(__name__, static_folder=ARGS.home, static_url_path="/@static")
+
+    @app.route("/<path:path>/@edit")
+    def edit(path: str) -> werkzeug.wrappers.Response:
+        """ edit markdown file
+
+        Args:
+            path: str: the path of the file to edit with neovim
+
+        Returns:
+            flask.redirect to the view route of the file to edit.
+        """
+        neovim_remote_open(os.path.join(ARGS.home, path))
+        return flask.redirect(f"/{path}")
+
+    @app.route("/@query-reload")
+    def query_reload() -> str:
+        """ query the server to see if the current page needs a reload
+
+        Returns:
+            html: str: the html representation for the perhaps reloaded file.
+        """
+        if os.path.exists("/tmp/smdv"):
+            with open("/tmp/smdv", "r") as file:
+                content = file.read()
+            os.remove("/tmp/smdv")
+            content = content.replace(ARGS.home, "")
+            if content == "":
+                content = "/"
+            return content
+        else:
+            return ""
+
+    @app.route("/@server-stop")
+    def request_server_stop():
+        """ kill current running flask server """
+        func = flask.request.environ.get("werkzeug.server.shutdown")
+        if func is None:
+            return f"could not stop server on port {ARGS.port}."
+        func()
+        return "smdv: server successfully stopped."
+
+    @app.route("/<path:path>.md")
+    def view_md(path: str) -> str:
+        """ view markdown file
+
+        Args:
+            path: the path of the markdown file to view.
+
+        Returns:
+            html: str: the html representation for the requested markdown file.
+        """
+        path = os.path.join(ARGS.home, path + ".md")
+        if ARGS.interactive:
+            neovim_remote_open(path)
+        html = md2html(path=path)
+        return html
+
+    @app.route("/<path:path>.ipynb")
+    def view_ipynb(path: str) -> str:
+        """ view jupyter notebook file
+
+        Args:
+            path: the path of the jupyter notebook to view.
+
+        Returns:
+            html: str: the html representation for the requested jupyter notebook file.
+
+        """
+        path = os.path.join(ARGS.home, path + ".ipynb")
+        if ARGS.interactive:
+            neovim_remote_open(path)
+        with open(path, "r") as file:
+            try:
+                html = subprocess.check_output(
+                    ["jupyter", "nbconvert", path, "--to", "html", "--stdout"]
+                )
+            except subprocess.CalledProcessError:
+                return flask.abort(500)
+        return html
+
+    @app.route("/")
+    @app.route("/<path:path>")
+    def view_other(path: str = "") -> typing.Union[str, werkzeug.wrappers.Response]:
+        """ view file/directory
+
+        Args:
+            path: str="": the path of the file or directory to show
+
+        Returns:
+            html: str: the html representation for the requested file or directory.
+
+        Note:
+            This is the default route. Any filetype that has no route of its own
+            will be opened here.
+        """
+        path = os.path.join(ARGS.home, path)
+        if ARGS.interactive:
+            neovim_remote_open(path)
+        if not os.path.exists(path):
+            flask.abort(404)
+        elif os.path.isdir(path):
+            return dir2html(path)
+        elif not is_binary_file(path):
+            with open(path, "r") as file:
+                content = file.read()
+            return md2html(content=f"```\n{content}\n```", path=path)
+        else:
+            return flask.redirect(
+                path.replace(ARGS.home, f"http://127.0.0.1:{ARGS.port}/@static")
+            )
+
+    return app
+
+
+# convert a directory path to html
+def dir2html(path: str, full: bool = True) -> str:
     """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
 
     Args:
-        path: str: the directory path
+        path: str: the directory path to convert to html
+        full: bool: wether to do a full conversion of the html (True),
+            or just to return the body
 
     Returns:
         html: str: the resulting html
@@ -315,7 +257,7 @@ def dir2html(path, full=True):
     if ARGS.home == os.path.expanduser("~"):
         displayed_path = path.replace(os.path.expanduser("~"), "~")
     else:
-        displayed_path = path.replace(os.path.dirname(ARGS.home)+"/", "")
+        displayed_path = path.replace(os.path.dirname(ARGS.home) + "/", "")
     filenames = {f"<h1>{displayed_path}/</h1>": None}
     if path != ARGS.home:
         filenames.update({"<b>⬆️  ..</b>": url(os.path.dirname(path))})
@@ -350,7 +292,87 @@ def dir2html(path, full=True):
     return html
 
 
-def md2html(content: str = "", path: str = "", full=True):
+# check if a file is a binary
+def is_binary_file(filename) -> bool:
+    """ check if a file can be considered a binary file
+
+    Args:
+        filename: str: the filename of the file to check
+
+    Returns:
+        is_binary_string: bool: the truth value indicating wether the file is
+            binary or not.
+    """
+    textchars = (
+        bytearray([7, 8, 9, 10, 12, 13, 27])
+        + bytearray(range(0x20, 0x7F))
+        + bytearray(range(0x80, 0x100))
+    )
+    is_binary_string = lambda bytes: bool(bytes.translate(None, textchars))
+
+    if is_binary_string(open(filename, "rb").read(1024)):
+        return True
+    else:
+        return False
+
+
+# main smdv function
+def main():
+    """ The main smdv function """
+    try:
+        # Arguments
+        parse_args(sys.argv[1:])
+
+        ## Script.
+        os.chdir(ARGS.home)
+
+        # ARGS.nvim_address = "127.0.0.1:9999"
+        # if asked to stop server, stop server and exit
+        if ARGS.stop:
+            server_stop()
+            exit(0)
+
+        # if asked the status of the server, return status and exit
+        if ARGS.status:
+            server_status()
+            exit(0)
+
+        # cleanup filename
+        print(sys.argv)
+        print(ARGS.filename)
+        filename = ARGS.filename
+        if filename is None:
+            filename = ARGS.home
+        full_filename = os.path.abspath(os.path.expanduser(filename))
+        filename = full_filename.replace(ARGS.home, "")
+        if filename == "":
+            filename = "/"
+
+        # sync current filename and exit (requires a running server)
+        if ARGS.sync:
+            with open("/tmp/smdv", "w") as file:
+                file.write(full_filename)
+            exit(0)
+
+        # kill other instance of smdv at this port if there is one running:
+        if socket_in_use(f"127.0.0.1:{ARGS.port}"):
+            subprocess.call(["python3", __file__, "--port", f"{ARGS.port}", "--stop"])
+            time.sleep(1)  # give some time to kill the old server
+
+        # open a browser at the current filename. Most browsers will wait for
+        # a few miliseconds to get a reply from the server...
+        browser_open(filename)
+
+        # ... this is just in time to start the server:
+        server_start()
+
+    except Exception as e:
+        print(f"{e.__class__.__name__}: {str(e)}", file=sys.stderr)
+        exit(1)
+
+
+# convert markdown content or path to html
+def md2html(content: str = "", path: str = "", full=True) -> str:
     """ convert markdown to html using the github flavored markdown [gfm] spec of pandoc
 
     Args:
@@ -375,9 +397,11 @@ def md2html(content: str = "", path: str = "", full=True):
     if path and full:
         path = path.replace(ARGS.home, "")
         if ARGS.home == os.path.expanduser("~"):
-            displayed_path = (ARGS.home+path).replace(os.path.expanduser("~"), "~")
+            displayed_path = (ARGS.home + path).replace(os.path.expanduser("~"), "~")
         else:
-            displayed_path = (ARGS.home+path).replace(os.path.dirname(ARGS.home)+"/", "")
+            displayed_path = (ARGS.home + path).replace(
+                os.path.dirname(ARGS.home) + "/", ""
+            )
         content = (
             f"# {displayed_path}\n"
             f"[🖊 edit]({f'{os.path.basename(path)}/@edit'})&nbsp;&nbsp;&nbsp;&nbsp;"
@@ -407,138 +431,197 @@ def md2html(content: str = "", path: str = "", full=True):
     return html
 
 
-## Routes.
-
-
-@bp.route("/<path:path>/@edit")
-def edit(path):
-    """ edit markdown file """
-    neovim_remote_open(os.path.join(ARGS.home, path))
-    return flask.redirect(f"/{path}")
-
-
-@bp.route("/@query-reload")
-def query_reload():
-    """ query the server if the current page needs a reload """
-    if os.path.exists("/tmp/smdv"):
-        with open("/tmp/smdv", "r") as file:
-            content = file.read()
-        os.remove("/tmp/smdv")
-        content = content.replace(ARGS.home, "")
-        if content == "":
-            content = "/"
-        return content
-    else:
-        return ""
-
-
-@bp.route("/@server-stop")
-def request_server_stop():
-    """ kill flask server """
-    func = flask.request.environ.get("werkzeug.server.shutdown")
-    if func is None:
-        return f"could not stop server on port {ARGS.port}."
-    func()
-    return "smdv: server successfully stopped."
-
-
-@bp.route("/<path:path>.md")
-def view_md(path):
-    """ iew markdown file """
-    path = os.path.join(ARGS.home, path + ".md")
-    if ARGS.interactive:
-        neovim_remote_open(path)
-    html = md2html(path=path)
-    return html
-
-
-@bp.route("/<path:path>.ipynb")
-def view_ipynb(path):
-    """ view markdown file """
-    path = os.path.join(ARGS.home, path + ".ipynb")
-    if ARGS.interactive:
-        neovim_remote_open(path)
-    with open(path, "r") as file:
-        try:
-            html = subprocess.check_output(
-                ["jupyter", "nbconvert", path, "--to", "html", "--stdout"]
-            )
-        except subprocess.CalledProcessError:
-            return flask.abort(500)
-    return html
-
-
-@bp.route("/")
-@bp.route("/<path:path>")
-def view_other(path=""):
-    """ view file/directory
+# open file in neovim
+def neovim_remote_open(filename: str = ""):
+    """ Open file in neovim using neovim-remote
 
     Args:
-        path: the path of the file or directory to show
-
-    Note:
-        This is the default route. Any filetype that has no route of its own
-        will be opened here.
+        filename: str="": the filename to open in neovim
     """
-    path = os.path.join(ARGS.home, path)
-    if ARGS.interactive:
-        neovim_remote_open(path)
+    path = os.path.abspath(os.path.expanduser(filename))
     if not os.path.exists(path):
-        flask.abort(404)
-    elif os.path.isdir(path):
-        return dir2html(path)
-    elif not is_binary_file(path):
-        with open(path, "r") as file:
-            content = file.read()
-        return md2html(content=f"```\n{content}\n```", path=path)
+        return
+    socket = ARGS.nvim_address.strip()
+    if not ":" in socket:  # unix socket
+        dirname = os.path.dirname(socket)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
+    if socket_in_use(socket):
+        subprocess.Popen(["nvr", "-s", "--nostart", "--servername", socket, path])
     else:
-        return flask.redirect(
-            path.replace(ARGS.home, f"http://127.0.0.1:{ARGS.port}/@static")
+        subprocess.Popen(
+            [ARGS.terminal, "-e", "nvr", "-s", "--servername", socket, path]
         )
 
 
-## Script.
+# argument parser
+def parse_args(args: tuple):
+    """ populate the global argument object ARGS
+
+    Args:
+        args: tuple: the arguments to parse
+
+    Populates:
+        ARGS: the global argument object which is used everywhere else.
+
+    """
+    global ARGS
+
+    ## Argument parser
+    parser = argparse.ArgumentParser(description="simple markdown viewer")
+    parser.add_argument(
+        "filename",
+        type=str,
+        nargs="?",
+        default="",
+        help="path or file to open with smdv",
+    )
+    parser.add_argument(
+        "-H",
+        "--home",
+        default=os.path.abspath(os.path.expanduser("~")),
+        help="set the root folder of the smdv server",
+    )
+    parser.add_argument(
+        "-t",
+        "--terminal",
+        default=os.environ.get("TERMINAL", ""),
+        help="default terminal to spawn (uses $TERMINAL by default)",
+    )
+    parser.add_argument(
+        "-b",
+        "--browser",
+        default=os.environ.get("BROWSER", ""),
+        help="default browser to spawn (uses $BROWSER by default)",
+    )
+    parser.add_argument(
+        "-p", "--port", default="9876", help="port on which smdv is served."
+    )
+    parser.add_argument(
+        "--md-css-cdn",
+        default="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
+        help="location of [github flavored] markdown css cdn (can be a local file)",
+    )
+    parser.add_argument(
+        "--jquery-cdn",
+        default="https://code.jquery.com/jquery-3.4.1.min.js",
+        help="location of jquery cdn (can be a local file)",
+    )
+    parser.add_argument(
+        "-v",
+        "--nvim-address",
+        default="127.0.0.1:9877",
+        help="address or socket to communicate with neovim (requires neovim-remote)",
+    )
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        default=False,
+        help="launch in interactive mode: each displayed page will also be displayed in neovim (requires neovim-remote)",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--start", action="store_true", default=False, help="check server status"
+    )
+    group.add_argument(
+        "--stop",
+        action="store_true",
+        default=False,
+        help="stop server; useful for a backgrounded process. ",
+    )
+    group.add_argument(
+        "--status", action="store_true", default=False, help="check server status"
+    )
+    parser.add_argument(
+        "-s",
+        "--sync",
+        action="store_true",
+        default=False,
+        help="sync new filename in current browser (requires a running server)",
+    )
+
+    ARGS = parser.parse_args(args=args)
+    ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
+
+
+# start the smdv server
+def server_start():
+    """ start the smdv server """
+    print(f"smdv: server started at http://127.0.0.1:{ARGS.port}")
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    with open(os.devnull, "w") as devnul:
+        sys.stdout, sys.stderr = devnul, devnul
+        create_app().run(debug=False, port=ARGS.port, threaded=True)
+    sys.stdout, sys.stderr = old_stdout, old_stderr
+
+
+# get status for the smdv server
+def server_status() -> str:
+    """ request the smdv server status
+
+    Returns:
+        status: str: the smdv server status
+    """
+    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
+    try:
+        connection.connect()
+        status = "server running"
+    except ConnectionRefusedError:
+        status = "server stopped"
+    finally:
+        connection.close()
+    print(f"smdv: {status}")
+    return status
+
+
+# stop the smdv server
+def server_stop():
+    """ stop the smdv server """
+    print("smdv: stopping server...")
+    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
+    try:
+        connection.connect()
+        connection.request("GET", "/@server-stop")
+        response = connection.getresponse().read().decode()
+    except ConnectionRefusedError:
+        response = "smdv: no server to stop."
+    finally:
+        connection.close()
+    if (
+        response == "smdv: server successfully stopped."
+        or response == "smdv: no server to stop."
+    ):
+        print(response)
+    else:
+        raise RuntimeError(response)
+
+
+# check if a socket is in use
+def socket_in_use(address: str) -> bool:
+    """ check if a socket is in use
+
+    Args:
+        address: str: the address of the unix/inet socket
+
+    Returns:
+        in_use: bool: wether the socket is in use or not.
+    """
+
+    if ":" in address:  # inet socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        host, port = address.split(":")
+        result = sock.connect_ex((host, int(port)))
+        if result == 0:
+            return True
+        else:
+            return False
+        sock.close()
+    else:  # unix socket
+        if os.path.exists(address):
+            return True
+        return False
+
 
 if __name__ == "__main__":
-    try:
-        # ARGS.nvim_address = "127.0.0.1:9999"
-        # if asked to stop server, stop server and exit
-        if ARGS.stop:
-            server_stop()
-            exit(0)
-
-        # if asked the status of the server, return status and exit
-        if ARGS.status:
-            server_status()
-            exit(0)
-
-        # cleanup filename
-        filename = ARGS.filename
-        if filename is None:
-            filename = ARGS.home
-        full_filename = os.path.abspath(os.path.expanduser(filename))
-        filename = full_filename.replace(ARGS.home, "")
-        if filename == "":
-            filename = "/"
-
-        # sync current filename and exit (requires a running server)
-        if ARGS.sync:
-            with open("/tmp/smdv", "w") as file:
-                file.write(full_filename)
-            exit(0)
-
-        # kill other instance of smdv at this port if there is one running:
-        if inet_socket_in_use(f"127.0.0.1:{ARGS.port}"):
-            subprocess.call(["smdv", "--port", f"{ARGS.port}", "--stop"])
-            time.sleep(1)  # give some time to kill the old server
-
-        # open a browser at the current filename. Most browsers will wait for
-        # a few miliseconds to get a reply from the server...
-        browser_open(filename)
-
-        # ... this is just in time to start the server:
-        server_start()
-
-    except Exception as e:
-        print(f"{e.__class__.__name__}: {str(e)}", file=sys.stderr)
-        exit(1)
+    main()
