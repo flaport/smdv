@@ -323,9 +323,6 @@ def main():
         # Arguments
         parse_args(sys.argv[1:])
 
-        ## Script.
-        os.chdir(ARGS.home)
-
         # ARGS.nvim_address = "127.0.0.1:9999"
         # if asked to stop server, stop server and exit
         if ARGS.stop:
