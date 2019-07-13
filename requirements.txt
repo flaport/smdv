@@ -1,3 +1,4 @@
 flask
+pandoc
 neovim
 neovim-remote
