@@ -28,10 +28,10 @@ should be installed and the following lines should be added to your `init.vim`:
 
 ```
     " start smdv with <F5> from inside neovim using the current neovim server to sync to
-    autocmd FileType markdown nnoremap <F5> :w<CR>:silent execute '!killall smdv; smdv %% -v "'.v:servername'" &> /dev/null & disown'<CR>
+    autocmd FileType markdown nnoremap <F5> :w<CR>:silent execute '!killall smdv; smdv % -v "'.v:servername'" &> /dev/null & disown'<CR>
 
     " sync the current markdown file to smdv on save.
-    autocmd BufWritePost *.md silent !smdv --sync %%<CR>
+    autocmd BufWritePost *.md silent !smdv --sync %<CR>
 ```
 
 This (re)starts the viewer when pressing `<F5>` and will sync the state after every save.
