@@ -15,6 +15,9 @@
 
 """ smdv: a simple markdown viewer """
 
+__version__ = "0.0.1"
+__author__ = "Floris Laporte"
+
 # standard library imports
 import os
 import sys

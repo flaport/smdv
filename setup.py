@@ -1,3 +1,4 @@
+import smdv
 from setuptools import setup
 
 with open("readme.md", "r") as f:
@@ -5,10 +6,10 @@ with open("readme.md", "r") as f:
 
 setup(
     name="smdv",
-    version="0.0.0",
-    author="Floris Laporte",
+    version=smdv.__version__,
+    author=smdv.__author__,
     author_email="floris.laporte@gmail.com",
-    description="a simple markdown viewer for linux",
+    description=smdv.__doc__,
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/flaport/smdv",
