@@ -538,6 +538,8 @@ def parse_args(args: tuple):
 
     ARGS = parser.parse_args(args=args)
     ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
+    if not ARGS.filename:
+        ARGS.filename = ARGS.home
 
 
 # start the smdv server
