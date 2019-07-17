@@ -392,6 +392,10 @@ def md2html(content: str = "", path: str = "", full=True) -> str:
     if path and not content:
         with open(path, "r") as file:
             content = file.read()
+
+    # bugfix for pandoc: make % shown as a single % (in stead of stopping conversion)
+    content = content.replace("%", "%%")
+
     if path and full:
         path = path.replace(ARGS.home, "")
         if ARGS.home == os.path.expanduser("~"):
