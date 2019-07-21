@@ -15,7 +15,7 @@
 
 """ smdv: a simple markdown viewer """
 
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __author__ = "Floris Laporte"
 
 # standard library imports
@@ -116,6 +116,22 @@ def browser_open(filename: str = ""):
         else:
             webbrowser.open(url)
 
+
+# clean filename
+def clean_filename(filename: str) -> str:
+    """ clean filename
+
+    Args:
+        filename: str: the filename to clean into standardized format
+
+    Returns:
+        filename: str: the cleaned up filename.
+
+    """
+    filename = full_filename(filename).replace(ARGS.home, "")
+    if filename == "":
+        filename = "/"
+    return filename
 
 # app factory
 def create_app() -> flask.Flask:
@@ -294,6 +310,22 @@ def dir2html(path: str, full: bool = True) -> str:
 
     return html
 
+# get full filename from relative path
+def full_filename(filename: str) -> str:
+    """ get full filename from relative path
+
+    Args:
+        filename: str: the filename to get the absolute path for
+
+    Returns:
+        filename: str: the full filename (path).
+
+    """
+    filename = ARGS.filename
+    if filename is None:
+        filename = ARGS.home
+    full_filename = os.path.abspath(os.path.expanduser(filename))
+    return full_filename
 
 # check if a file is a binary
 def is_binary_file(filename) -> bool:
@@ -337,19 +369,12 @@ def main():
             server_status()
             exit(0)
 
-        # cleanup filename
-        filename = ARGS.filename
-        if filename is None:
-            filename = ARGS.home
-        full_filename = os.path.abspath(os.path.expanduser(filename))
-        filename = full_filename.replace(ARGS.home, "")
-        if filename == "":
-            filename = "/"
+        # clean filename
+        filename = clean_filename(ARGS.filename)
 
         # sync current filename and exit (requires a running server)
         if ARGS.sync:
-            with open("/tmp/smdv", "w") as file:
-                file.write(full_filename)
+            sync_filename(filename)
             exit(0)
 
         # kill other instance of smdv at this port if there is one running:
@@ -621,6 +646,19 @@ def socket_in_use(address: str) -> bool:
         if os.path.exists(address):
             return True
         return False
+
+
+# sync filename
+def sync_filename(filename: str):
+    """ sync filename by writing the name of the filename to /tmp/smdv
+
+    Args:
+        filename: str: the filename to sync
+
+    """
+    filename = full_filename(filename)
+    with open("/tmp/smdv", "w") as file:
+        file.write(filename)
 
 
 if __name__ == "__main__":
