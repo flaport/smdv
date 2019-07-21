@@ -133,6 +133,7 @@ def clean_filename(filename: str) -> str:
         filename = "/"
     return filename
 
+
 # app factory
 def create_app() -> flask.Flask:
     """ flask app factory
@@ -182,6 +183,12 @@ def create_app() -> flask.Flask:
             return f"could not stop server on port {ARGS.port}."
         func()
         return "smdv: server successfully stopped."
+
+    @app.route("/@stdin")
+    def view_stdin():
+        """ Show content from stdin """
+        html = md2html(content=STDIN)
+        return html
 
     @app.route("/<path:path>.md")
     def view_md(path: str) -> str:
@@ -310,6 +317,7 @@ def dir2html(path: str, full: bool = True) -> str:
 
     return html
 
+
 # get full filename from relative path
 def full_filename(filename: str) -> str:
     """ get full filename from relative path
@@ -326,6 +334,7 @@ def full_filename(filename: str) -> str:
         filename = ARGS.home
     full_filename = os.path.abspath(os.path.expanduser(filename))
     return full_filename
+
 
 # check if a file is a binary
 def is_binary_file(filename) -> bool:
@@ -354,21 +363,27 @@ def is_binary_file(filename) -> bool:
 # main smdv function
 def main():
     """ The main smdv function """
-    try:
-        # Arguments
-        parse_args(sys.argv[1:])
 
-        # ARGS.nvim_address = "127.0.0.1:9999"
-        # if asked to stop server, stop server and exit
-        if ARGS.stop:
-            server_stop()
-            exit(0)
+    # Arguments
+    parse_args(sys.argv[1:])
 
-        # if asked the status of the server, return status and exit
-        if ARGS.status:
-            server_status()
-            exit(0)
+    # ARGS.nvim_address = "127.0.0.1:9999"
+    # if asked to stop server, stop server and exit
+    if ARGS.stop:
+        server_stop()
+        exit(0)
 
+    # if asked the status of the server, return status and exit
+    if ARGS.status:
+        server_status()
+        exit(0)
+
+    # if stdin flag is given, read content from stdin
+    if ARGS.stdin:
+        global STDIN
+        STDIN = sys.stdin.read()
+        filename = "@stdin"
+    else:
         # clean filename
         filename = clean_filename(ARGS.filename)
 
@@ -377,21 +392,17 @@ def main():
             sync_filename(filename)
             exit(0)
 
-        # kill other instance of smdv at this port if there is one running:
-        if socket_in_use(f"127.0.0.1:{ARGS.port}"):
-            subprocess.call(["python3", __file__, "--port", f"{ARGS.port}", "--stop"])
-            time.sleep(1)  # give some time to kill the old server
+    # kill other instance of smdv at this port if there is one running:
+    if socket_in_use(f"127.0.0.1:{ARGS.port}"):
+        subprocess.call(["python3", __file__, "--port", f"{ARGS.port}", "--stop"])
+        time.sleep(1)  # give some time to kill the old server
 
-        # open a browser at the current filename. Most browsers will wait for
-        # a few miliseconds to get a reply from the server...
-        browser_open(filename)
+    # open a browser at the current filename. Most browsers will wait for
+    # a few miliseconds to get a reply from the server...
+    browser_open(filename)
 
-        # ... this is just in time to start the server:
-        server_start()
-
-    except Exception as e:
-        print(f"{e.__class__.__name__}: {str(e)}", file=sys.stderr)
-        exit(1)
+    # ... this is just in time to start the server:
+    server_start()
 
 
 # convert markdown content or path to html
@@ -498,6 +509,13 @@ def parse_args(args: tuple):
         nargs="?",
         default="",
         help="path or file to open with smdv",
+    )
+    parser.add_argument(
+        "-I",
+        "--stdin",
+        action="store_true",
+        default=False,
+        help="read input from stdin",
     )
     parser.add_argument(
         "-H",
