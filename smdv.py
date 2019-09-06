@@ -382,6 +382,7 @@ def main():
     if ARGS.stdin:
         global STDIN
         STDIN = sys.stdin.read()
+        os.chdir(ARGS.home)
         filename = "@stdin"
     else:
         # clean filename
