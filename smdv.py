@@ -15,7 +15,7 @@
 
 """ smdv: a simple markdown viewer """
 
-__version__ = "0.0.3"
+__version__ = "0.0.4"
 __author__ = "Floris Laporte"
 
 # standard library imports
@@ -33,6 +33,9 @@ import http.client
 # third party imports
 import flask
 import werkzeug
+
+# constants
+STDIN = ""
 
 # add header to html body
 def body2html(body: str) -> str:
