@@ -175,9 +175,14 @@ def create_app() -> flask.Flask:
         else:
             return ""
 
-    @app.route("/@stdin")
+    @app.route("/@stdin", methods=["GET", "PUT"])
     def view_stdin():
         """ Show content from stdin """
+        global STDIN
+        if flask.request.method == "PUT":
+            STDIN = flask.request.data.decode()
+            with open("/tmp/smdv", "w") as file:
+                file.write("@stdin")
         html = md2html(content=STDIN)
         return html
 
@@ -604,7 +609,7 @@ def server_start():
     print(f"smdv: server started at http://127.0.0.1:{ARGS.port}")
     old_stdout, old_stderr = sys.stdout, sys.stderr
     with open(os.devnull, "w") as devnul:
-        sys.stdout, sys.stderr = devnul, devnul
+        #sys.stdout, sys.stderr = devnul, devnul
         create_app().run(debug=False, port=ARGS.port, threaded=True)
     sys.stdout, sys.stderr = old_stdout, old_stderr
 
