@@ -175,15 +175,6 @@ def create_app() -> flask.Flask:
         else:
             return ""
 
-    @app.route("/@server-stop")
-    def request_server_stop():
-        """ kill current running flask server """
-        func = flask.request.environ.get("werkzeug.server.shutdown")
-        if func is None:
-            return f"could not stop server on port {ARGS.port}."
-        func()
-        return "smdv: server successfully stopped."
-
     @app.route("/@stdin")
     def view_stdin():
         """ Show content from stdin """
@@ -229,7 +220,7 @@ def create_app() -> flask.Flask:
                 return flask.abort(500)
         return html
 
-    @app.route("/")
+    @app.route("/", methods=["GET", "DELETE"])
     @app.route("/<path:path>")
     def view_other(path: str = "") -> typing.Union[str, werkzeug.wrappers.Response]:
         """ view file/directory
@@ -244,6 +235,12 @@ def create_app() -> flask.Flask:
             This is the default route. Any filetype that has no route of its own
             will be opened here.
         """
+        if flask.request.method == "DELETE": # stop server
+            func = flask.request.environ.get("werkzeug.server.shutdown")
+            if func is None:
+                return f"could not stop server on port {ARGS.port}."
+            func()
+            return "smdv: server successfully stopped."
         path = os.path.join(ARGS.home, path)
         if ARGS.interactive:
             neovim_remote_open(path)
@@ -638,7 +635,7 @@ def server_stop():
     connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
     try:
         connection.connect()
-        connection.request("GET", "/@server-stop")
+        connection.request("DELETE", "/")
         response = connection.getresponse().read().decode()
     except ConnectionRefusedError:
         response = "smdv: no server to stop."
