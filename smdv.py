@@ -83,11 +83,11 @@ def body2html(body: str) -> str:
                      // $('#content').html(data);
                      // location.reload()
                      location.href = data
-                 setTimeout(queryReload, 1000);
+                 setTimeout(queryReload, {ARGS.refresh_rate});
                }}
             }});
             }}
-            setTimeout(queryReload, 1000);
+            setTimeout(queryReload, {ARGS.refresh_rate});
         </script>
         </body>
         </html>
@@ -649,6 +649,13 @@ def parse_args(args: tuple):
         default=False,
         help="sync new filename in current browser (requires a running server)",
     )
+    parser.add_argument(
+        "-r",
+        "--refresh-rate",
+        default="1000",
+        help="refresh interval in ms of the server. This is how often smdv checks for (saved) updates in the source file."
+    )
+
 
     ARGS = parser.parse_args(args=args)
     ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
