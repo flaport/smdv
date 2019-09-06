@@ -15,7 +15,7 @@
 
 """ smdv: a simple markdown viewer """
 
-__version__ = "0.0.4"
+__version__ = "0.0.5"
 __author__ = "Floris Laporte"
 
 # standard library imports
@@ -36,6 +36,7 @@ import werkzeug
 
 # constants
 STDIN = ""
+TEMPFILE = "/tmp/smdv"
 
 # add header to html body
 def body2html(body: str) -> str:
@@ -166,10 +167,10 @@ def create_app() -> flask.Flask:
         Returns:
             html: str: the html representation for the perhaps reloaded file.
         """
-        if os.path.exists("/tmp/smdv"):
-            with open("/tmp/smdv", "r") as file:
+        if os.path.exists(TEMPFILE):
+            with open(TEMPFILE, "r") as file:
                 content = file.read()
-            os.remove("/tmp/smdv")
+            os.remove(TEMPFILE)
             content = content.replace(ARGS.home, "")
             if content == "":
                 content = "/"
@@ -388,8 +389,8 @@ def main():
     parse_args(sys.argv[1:])
 
     # Remove tempfile
-    if os.path.exists("/tmp/smdv"):
-        os.remove("/tmp/smdv")
+    if os.path.exists(TEMPFILE):
+        os.remove(TEMPFILE)
 
     # ARGS.nvim_address = "127.0.0.1:9999"
     # if asked to stop server, stop server and exit
@@ -560,7 +561,7 @@ def parse_args(args: tuple):
         ARGS: the global argument object which is used everywhere else.
 
     """
-    global ARGS
+    global ARGS, TEMPFILE
 
     ## Argument parser
     parser = argparse.ArgumentParser(description="simple markdown viewer")
@@ -654,6 +655,8 @@ def parse_args(args: tuple):
     ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
     if not ARGS.filename:
         ARGS.filename = ARGS.home
+    if ARGS.port:
+        TEMPFILE = f"/tmp/smdv{ARGS.port}"
 
 
 # start the smdv server
@@ -756,14 +759,14 @@ def stdin_status() -> bool:
 
 # sync filename
 def sync_filename(filename: str):
-    """ sync filename by writing the name of the filename to /tmp/smdv
+    """ sync filename by writing the name of the filename to TEMPFILE
 
     Args:
         filename: str: the filename to sync
 
     """
     filename = full_filename(filename)
-    with open("/tmp/smdv", "w") as file:
+    with open(TEMPFILE, "w") as file:
         file.write(filename)
 
 
