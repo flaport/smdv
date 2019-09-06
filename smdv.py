@@ -76,16 +76,20 @@ def body2html(body: str) -> str:
         </article>
         <script>
             function queryReload() {{
-            $.ajax({{
-               url: "/@query-reload",
-               success: function(data) {{
-                  if (data)
-                     // $('#content').html(data);
-                     // location.reload()
-                     location.href = data
-                 setTimeout(queryReload, {ARGS.refresh_rate});
-               }}
-            }});
+                $.ajax({{
+                   url: "/@query-reload",
+                   success: function(data) {{
+                      if (data)
+                         // $('#content').html(data);
+                         // location.reload()
+                         location.href = data
+                     setTimeout(queryReload, {ARGS.refresh_rate});
+                   }}
+                }});
+                let marker = document.getElementById("marker");
+                if(marker) {{
+                  marker.scrollIntoView();
+                }}
             }}
             setTimeout(queryReload, {ARGS.refresh_rate});
         </script>
