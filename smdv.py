@@ -258,7 +258,7 @@ def create_app() -> flask.Flask:
                     "the '--stdin' flag to make this work.\n"
                 )
             global STDIN
-            STDIN = flask.request.data.decode()
+            STDIN = flask.request.data.decode().replace("%","%%")
             sync_filename("/")
 
         if STDIN:
