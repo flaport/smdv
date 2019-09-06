@@ -399,7 +399,8 @@ def main():
 
     # open a browser at the current filename. Most browsers will wait for
     # a few miliseconds to get a reply from the server...
-    browser_open(filename)
+    if not ARGS.no_browser:
+        browser_open(filename)
 
     # ... this is just in time to start the server:
     server_start()
@@ -538,6 +539,13 @@ def parse_args(args: tuple):
         "--browser",
         default=os.environ.get("BROWSER", ""),
         help="default browser to spawn (uses $BROWSER by default)",
+    )
+    parser.add_argument(
+        "-B",
+        "--no-browser",
+        action="store_true",
+        default=False,
+        help="start the server without opening a browser.",
     )
     parser.add_argument(
         "-p", "--port", default="9876", help="port on which smdv is served."
