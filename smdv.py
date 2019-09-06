@@ -261,7 +261,7 @@ def create_app() -> flask.Flask:
             STDIN = flask.request.data.decode().replace("%","%%")
             sync_filename("/")
 
-        if STDIN:
+        if STDIN and path == "":
             html = md2html(content=STDIN)
             return html
 
@@ -408,7 +408,6 @@ def main():
         global STDIN
         STDIN = sys.stdin.read()
         if server_status() == "server stopped":
-            os.chdir(ARGS.home)
             filename = "/"
         elif server_status() == "server running":
             if stdin_status():
@@ -583,7 +582,7 @@ def parse_args(args: tuple):
         "-H",
         "--home",
         default=os.path.abspath(os.path.expanduser("~")),
-        help="set the root folder of the smdv server",
+        help="set the root folder of the smdv server (disabled when --stdin is used)",
     )
     parser.add_argument(
         "-t",
@@ -653,6 +652,8 @@ def parse_args(args: tuple):
 
     ARGS = parser.parse_args(args=args)
     ARGS.home = os.path.abspath(os.path.expanduser(ARGS.home))
+    if ARGS.stdin: # always use current working directory for --stdin flag.
+        ARGS.home = os.path.abspath(os.path.expanduser(os.getcwd()))
     if not ARGS.filename:
         ARGS.filename = ARGS.home
     if ARGS.port:
