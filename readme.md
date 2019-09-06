@@ -17,7 +17,7 @@ a **s**imple **m**ark**d**own **v**iewer for linux.
     pip3 install smdv
 ```
 
-## Neovim compatibility
+## Compatibility with neovim
 This viewer was made with neovim compatibility in mind. With the use of `neovim-remote`,
 this script is able to open files in the current neovim window (or spawn a new neovim
 window if there is no window available).
@@ -36,8 +36,18 @@ should be installed and the following lines should be added to your `init.vim`:
 
 This (re)starts the viewer when pressing `<F5>` and will sync the state after every save.
 
+## Compatibility with vim-instant-markdown
+smdv can be setup as an alternative mini-server for the
+[vim-instant-markdown](https://github.com/suan/vim-instant-markdown) plugin for
+vim. Install the plugin and add the following line to your vimrc:
+```
+let g:instant_markdown_python = 1
+```
+
+
 ## Screenshots
 ### markdown preview
 ![smdv-dir](img/smdv-md.png)
 ### directory
 ![smdv-dir](img/smdv-dir.png)
+
