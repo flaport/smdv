@@ -34,7 +34,6 @@ import http.client
 import flask
 import werkzeug
 
-
 # add header to html body
 def body2html(body: str) -> str:
     """ convert a html body to full html
@@ -175,16 +174,14 @@ def create_app() -> flask.Flask:
         else:
             return ""
 
-    @app.route("/@stdin", methods=["GET", "PUT"])
-    def view_stdin():
-        """ Show content from stdin """
-        global STDIN
-        if flask.request.method == "PUT":
-            STDIN = flask.request.data.decode()
-            with open("/tmp/smdv", "w") as file:
-                file.write("@stdin")
-        html = md2html(content=STDIN)
-        return html
+    @app.route("/@stdin")
+    def view_stdin() -> str:
+        """ show content of stdin
+
+        Returns:
+            stdin: str: wether the server accepts content from stdin or not
+        """
+        return str(ARGS.stdin)
 
     @app.route("/<path:path>.md")
     def view_md(path: str) -> str:
@@ -225,7 +222,7 @@ def create_app() -> flask.Flask:
                 return flask.abort(500)
         return html
 
-    @app.route("/", methods=["GET", "DELETE"])
+    @app.route("/", methods=["GET", "PUT", "DELETE"])
     @app.route("/<path:path>")
     def view_other(path: str = "") -> typing.Union[str, werkzeug.wrappers.Response]:
         """ view file/directory
@@ -240,12 +237,30 @@ def create_app() -> flask.Flask:
             This is the default route. Any filetype that has no route of its own
             will be opened here.
         """
-        if flask.request.method == "DELETE": # stop server
+
+        if flask.request.method == "DELETE":  # stop server
             func = flask.request.environ.get("werkzeug.server.shutdown")
             if func is None:
                 return f"could not stop server on port {ARGS.port}."
             func()
             return "smdv: server successfully stopped."
+        elif flask.request.method == "PUT":
+            if not ARGS.stdin:
+                return (
+                    f"Failed: running smdv server at http://localhost:{ARGS.port} "
+                    "was not started with the '--stdin' flag and consequently "
+                    "does not accept 'PUT' requests or updates from stdin. Stop "
+                    "the server with the '--stop' flag and restart it with "
+                    "the '--stdin' flag to make this work.\n"
+                )
+            global STDIN
+            STDIN = flask.request.data.decode()
+            sync_filename("/")
+
+        if STDIN:
+            html = md2html(content=STDIN)
+            return html
+
         path = os.path.join(ARGS.home, path)
         if ARGS.interactive:
             neovim_remote_open(path)
@@ -369,6 +384,10 @@ def main():
     # Arguments
     parse_args(sys.argv[1:])
 
+    # Remove tempfile
+    if os.path.exists("/tmp/smdv"):
+        os.remove("/tmp/smdv")
+
     # ARGS.nvim_address = "127.0.0.1:9999"
     # if asked to stop server, stop server and exit
     if ARGS.stop:
@@ -384,8 +403,39 @@ def main():
     if ARGS.stdin:
         global STDIN
         STDIN = sys.stdin.read()
-        os.chdir(ARGS.home)
-        filename = "@stdin"
+        if server_status() == "server stopped":
+            os.chdir(ARGS.home)
+            filename = "/"
+        elif server_status() == "server running":
+            if stdin_status():
+                content_out = subprocess.Popen(
+                    ["printf", STDIN], stdout=subprocess.PIPE
+                ).stdout
+                with open(os.devnull, "w") as NULL:
+                    subprocess.Popen(
+                        [
+                            "curl",
+                            "-s",
+                            "-X",
+                            "PUT",
+                            "-T",
+                            "-",
+                            f"http://localhost:{ARGS.port}",
+                        ],
+                        stdin=content_out,
+                        stdout=NULL,
+                    )
+                sync_filename("/")
+                exit(0)
+            else:
+                print(
+                    f"Failed: running smdv server at http://localhost:{ARGS.port} "
+                    "was not started with the '--stdin' flag and consequently "
+                    "does not accept 'PUT' requests or updates from stdin. Stop "
+                    "the server with the '--stop' flag and restart it with "
+                    "the '--stdin' flag to make this work.\n"
+                )
+                exit(1)
     else:
         # clean filename
         filename = clean_filename(ARGS.filename)
@@ -609,7 +659,7 @@ def server_start():
     print(f"smdv: server started at http://127.0.0.1:{ARGS.port}")
     old_stdout, old_stderr = sys.stdout, sys.stderr
     with open(os.devnull, "w") as devnul:
-        #sys.stdout, sys.stderr = devnul, devnul
+        sys.stdout, sys.stderr = devnul, devnul
         create_app().run(debug=False, port=ARGS.port, threaded=True)
     sys.stdout, sys.stderr = old_stdout, old_stderr
 
@@ -652,7 +702,8 @@ def server_stop():
     ):
         print(response)
     else:
-        raise RuntimeError(response)
+        print(response)
+        exit(1)
 
 
 # check if a socket is in use
@@ -679,6 +730,25 @@ def socket_in_use(address: str) -> bool:
         if os.path.exists(address):
             return True
         return False
+
+
+# ask if the server accepts PUT requests from stdin
+def stdin_status() -> bool:
+    """ request the smdv stdin status
+
+    Returns:
+        status: bool: True if server accepts PUT requests from stdin, else False
+    """
+    connection = http.client.HTTPConnection("127.0.0.1", ARGS.port)
+    try:
+        connection.connect()
+        connection.request("GET", "/@stdin")
+        status = connection.getresponse().read().decode() == "True"
+    except ConnectionRefusedError:
+        status = False
+    finally:
+        connection.close()
+    return status
 
 
 # sync filename
