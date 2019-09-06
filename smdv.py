@@ -652,7 +652,7 @@ def parse_args(args: tuple):
     parser.add_argument(
         "-r",
         "--refresh-rate",
-        default="1000",
+        default="100",
         help="refresh interval in ms of the server. This is how often smdv checks for (saved) updates in the source file."
     )
 
