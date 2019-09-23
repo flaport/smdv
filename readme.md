@@ -38,7 +38,7 @@ These settings enable (re)starting the smdv viewer when pressing `<F5>`, while
 the markdown file will also be synced after every save.
 
 ## Compatibility with vim-instant-markdown
-Alternatively, if syncing after every save is not enought, smdv can also be
+Alternatively, if syncing after every save is not enough, smdv can also be
 used in conjuction with
 [vim-instant-markdown](https://github.com/suan/vim-instant-markdown). Install the 
 vim-plugin and add the following line to your vimrc:

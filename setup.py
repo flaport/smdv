@@ -16,6 +16,7 @@ setup(
     py_modules=["smdv"],
     entry_points={"console_scripts": ["smdv = smdv:main"]},
     python_requires=">=3.6",
+    install_requires=["flask", "websockets"],
     classifiers=[
         "Topic :: Utilities",
         "Intended Audience :: End Users/Desktop",
