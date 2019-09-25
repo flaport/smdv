@@ -25,6 +25,7 @@ __author__ = "Floris Laporte"
 # python standard library
 import io
 import os
+import re
 import sys
 import json
 import time
@@ -904,8 +905,6 @@ def main() -> int:
     try:
         default_args = parse_args(SMDV_DEFAULT_ARGS.split(" "))
         ARGS = parse_args(sys.argv[1:], **default_args.__dict__)
-        with open("/home/flaport/smdv.log", "w") as file:
-            file.write(str(ARGS))
 
         # first do single-shot SMDV flags:
         if ARGS.start_server:
@@ -1004,6 +1003,18 @@ def md2body(content: str = "") -> str:
         .decode()
         .strip()
     )
+
+    urls = (re.findall('src="(.*?)"', html)
+            + re.findall("src='(.*?)'", html)
+            + re.findall('href="(.*?)"', html)
+            + re.findall("href='(.*?)'", html))
+
+
+    cwd = os.path.abspath(os.getcwd()).replace(ARGS.home, "") + "/"
+    for url in urls:
+        if not (url.startswith("/") or url.startswith("http://") or url.startswith("https://")):
+            html = html.replace(url, f"http://{ARGS.host}:{ARGS.port}/@static{cwd}{url}")
+
     return html
 
 
