@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-""" SMDV: a simple markdown viewer """
+""" smdv: a simple markdown viewer """
 
 ## Metadata
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "Floris Laporte"
 
 
@@ -48,8 +48,8 @@ import websockets
 # neovim-remote (to edit files with vim)
 
 ## Globals
-ARGS = ""  # the SMDV command line arguments
-SMDV_DEFAULT_ARGS = os.environ.get("SMDV_DEFAULT_ARGS", "")  # default SMDV arguments
+ARGS = ""  # the smdv command line arguments
+SMDV_DEFAULT_ARGS = os.environ.get("SMDV_DEFAULT_ARGS", "")  # default smdv arguments
 JSCLIENTS = set()  # jsclients wait for an update from the pyclient
 PYCLIENTS = set()  # pyclients update the html body of the jsclient
 WEBSOCKETS_SERVER = None  # websockets server
@@ -64,7 +64,7 @@ HTMLTEMPLATE = """
 <!DOCTYPE html>
 <html>
     <head>
-        <title>SMDV</title>
+        <title>smdv {interactive} </title>
         <link rel="stylesheet" href="{md_css_cdn}">
         <style>
             .markdown-body {{
@@ -480,6 +480,8 @@ async def handle_message(client: websockets.WebSocketServerProtocol, message: st
         encode(message)
     if func in {"dir", "file"}:
         MESSAGE.update(message)
+        if ARGS.interactive and MESSAGE["func"]=="file":
+            edit_in_neovim(ARGS.home + MESSAGE["fileCwd"] + MESSAGE["filename"])
         await send_message_to_all_js_clients()
         return
 
@@ -513,7 +515,7 @@ async def register_client(client: websockets.WebSocketServerProtocol):
 
 # python websocket client
 async def send_as_pyclient_async(message: dict):
-    """ send a message to the SMDV server as the python client
+    """ send a message to the smdv server as the python client
 
     Args:
         message: the message to send (in dictionary format)
@@ -646,11 +648,11 @@ def create_app() -> flask.Flask:
         except Exception as e:
             return 1
 
-    # index route for the SMDV app
+    # index route for the smdv app
     @app.route("/", methods=["GET", "PUT", "DELETE"])
     @app.route("/<path:path>/", methods=["GET"])
     def index(path: str = "") -> str:
-        """ the main (index) route of SMDV
+        """ the main (index) route of smdv
 
         Returns:
             html: the html representation of the requested path
@@ -663,6 +665,7 @@ def create_app() -> flask.Flask:
 
             html = HTMLTEMPLATE.format(
                 home=ARGS.home,
+                interactive=f"{'--interactive' if ARGS.interactive else ''}",
                 md_css_cdn=ARGS.md_css_cdn,
                 host=ARGS.websocket_host,
                 port=ARGS.websocket_port,
@@ -894,19 +897,19 @@ def number_of_connected_jsclients():
     return EVENT_LOOP.run_until_complete(ask_num_js_clients())
 
 
-# main SMDV program
+# main smdv program
 def main() -> int:
-    """ The main SMDV program
+    """ The main smdv program
 
     Returns:
-        exit_status: the exit status of SMDV.
+        exit_status: the exit status of smdv.
     """
     global ARGS
     try:
         default_args = parse_args(SMDV_DEFAULT_ARGS.split(" "))
         ARGS = parse_args(sys.argv[1:], **default_args.__dict__)
 
-        # first do single-shot SMDV flags:
+        # first do single-shot smdv flags:
         if ARGS.start_server:
             run_flask_server()
             return 0
@@ -941,7 +944,7 @@ def main() -> int:
             wait_for_server(server="websocket", status="stopped")
         run_server_in_subprocess(server="websocket")
 
-        # next, start SMDV server. Assume the server is already running on failure
+        # next, start smdv server. Assume the server is already running on failure
         if ARGS.restart:  # force restart
             send_delete_request_to_server()
             wait_for_server(server="flask", status="stopped")
@@ -1038,7 +1041,7 @@ def open_browser():
 
 # parse command line arguments
 def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
-    """ populate the SMDV command line arguments
+    """ populate the smdv command line arguments
 
     Args:
         args: the arguments to parse
@@ -1049,13 +1052,13 @@ def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
 
     """
     ## Argument parser
-    parser = argparse.ArgumentParser(description="SMDV: a Simple MarkDown Viewer")
+    parser = argparse.ArgumentParser(description="smdv: a Simple MarkDown Viewer")
     parser.add_argument(
         "filename",
         type=str,
         nargs="?",
         default=kwargs.get("filename", ""),
-        help="path or file to open with SMDV",
+        help="path or file to open with smdv",
     )
     parser.add_argument(
         "-H",
@@ -1069,7 +1072,7 @@ def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
         default=kwargs.get("stdin", "md"),
         choices=["md", "html", "txt"],
         help=(
-            "read content for SMDV from stdin. Takes optional encoding types:"
+            "read content for smdv from stdin. Takes optional encoding types:"
             "    md (default), html"
         ),
     )
@@ -1077,7 +1080,7 @@ def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
         "-p",
         "--port",
         default=kwargs.get("port", "9876"),
-        help="port on which SMDV is served.",
+        help="port on which smdv is served.",
     )
     parser.add_argument(
         "-w",
@@ -1088,7 +1091,7 @@ def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
     parser.add_argument(
         "--host",
         default=kwargs.get("host", "localhost"),
-        help="host on which SMDV is served (for now, only localhost is supported)",
+        help="host on which smdv is served (for now, only localhost is supported)",
         choices=["localhost", "127.0.0.1"],
     )
     parser.add_argument(
@@ -1116,13 +1119,13 @@ def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
         "--restart",
         action="store_true",
         default=kwargs.get("restart", False),
-        help="force a restart of SMDV (both servers)",
+        help="force a restart of smdv (both servers)",
     )
     parser.add_argument(
         "--hide-navbar",
         action="store_true",
         default=kwargs.get("hide_navbar", False),
-        help="don't show the SMDV navbar by default",
+        help="don't show the smdv navbar by default",
     )
     parser.add_argument(
         "-t",
@@ -1143,54 +1146,62 @@ def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
         default=kwargs.get("nvim_address", "127.0.0.1:9878"),
         help="address or socket to communicate with vim",
     )
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        default=kwargs.get("interactive", False),
+        help=("open smdv in interactive mode (every file opened in "
+              "smdv will also automatically be opened in vim)."),
+    )
     single_shot_arguments = parser.add_mutually_exclusive_group()
     single_shot_arguments.add_argument(
         "--server-status",
         action="store_true",
         default=kwargs.get("server_status", False),
-        help="ask status of the SMDV server",
+        help="ask status of the smdv server",
     )
     single_shot_arguments.add_argument(
         "--websocket-server-status",
         action="store_true",
         default=kwargs.get("websocket_server_status", False),
-        help="ask status of the SMDV server",
+        help="ask status of the smdv server",
     )
     single_shot_arguments.add_argument(
         "--start-server",
         action="store_true",
         default=kwargs.get("start_server", False),
-        help="start the SMDV server (without doing anything else)",
+        help="start the smdv server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--stop-server",
         action="store_true",
         default=kwargs.get("stop_server", False),
-        help="stop the SMDV server (without doing anything else)",
+        help="stop the smdv server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--start-websocket-server",
         action="store_true",
         default=kwargs.get("start_websocket_server", False),
-        help="start the SMDV websocket server (without doing anything else)",
+        help="start the smdv websocket server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--stop-websocket-server",
         action="store_true",
         default=kwargs.get("stop_websocket_server", False),
-        help="stop the SMDV websocket server (without doing anything else)",
+        help="stop the smdv websocket server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--stop",
         action="store_true",
         default=kwargs.get("stop", False),
-        help="stop SMDV running in the background (kills both servers)",
+        help="stop smdv running in the background (kills both servers)",
     )
     single_shot_arguments.add_argument(
         "--start",
         action="store_true",
         default=kwargs.get("start", False),
-        help="start SMDV (both servers)",
+        help="start smdv (both servers)",
     )
     parsed_args = parser.parse_args(args=args)
     if parsed_args.stdin is None:
@@ -1273,15 +1284,18 @@ def run_server_in_subprocess(server="flask"):
         "--md-css-cdn": ARGS.md_css_cdn,
         "--nvim-address": ARGS.nvim_address,
     }
+
+    args_list = [str(s) for kv in args.items() for s in kv]  # flattened dict as list
+    if ARGS.interactive:
+        args_list += ["--interactive"]
     if server == "flask":
-        args["--start-server"] = True
+        args_list += ["--start-server"]
     elif server == "websocket":
-        args["--start-websocket-server"] = True
+        args_list += ["--start-websocket-server"]
     else:
         raise ValueError(
             "server to start in subprocess should be either 'flask' or 'websocket'"
         )
-    args_list = [str(s) for kv in args.items() for s in kv]  # flattened dict as list
     with open(os.devnull, "w") as null:
         subprocess.Popen(["smdv"] + args_list, stdout=null, stderr=null)
 
@@ -1312,7 +1326,7 @@ def send_as_pyclient(message: dict):
 
 # stop the smdv server
 def send_delete_request_to_server():
-    """ stop the SMDV server by sending a DELETE request
+    """ stop the smdv server by sending a DELETE request
 
     Returns:
         exit_status: the exit status (0=success, 1=failure)
@@ -1331,7 +1345,7 @@ def send_delete_request_to_server():
         return exit_code
 
 
-# update body of SMDV from stdin
+# update body of smdv from stdin
 def send_message_from_stdin():
     """ read content from stdin and place it in the html body """
     content = sys.stdin.read()
@@ -1456,7 +1470,7 @@ def wait_for_connected_jsclient(interval: float = 0.3, max_attempts: int = 6):
 
 # block until a connection to the websocket server can be established
 def wait_for_server(
-    interval: float = 0.1,
+    interval: float = 0.3,
     max_attempts: int = 10,
     server: str = "flask",
     status: str = "running",
