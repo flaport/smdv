@@ -18,6 +18,15 @@ a **s**imple **m**ark**d**own **v**iewer for linux.
     pip3 install smdv
 ```
 
+## Configuration
+smdv listens to a single environment variable: `SMDV_DEFAULT_ARGS`. As an example, below
+you can see how smdv can be configured to always open in firefox on port 9999 by placing
+the following line in your `.bashrc`:
+```
+SMDV_DEFAULT_ARGS="--browser firefox --port 9999"
+```
+Consult `smdv --help` to see which flags can be used.
+
 ## Compatibility with neovim
 This viewer was made with neovim compatibility in mind. With the use of `neovim-remote`,
 this script is able to open files in the current neovim window (or spawn a new neovim
@@ -25,33 +34,30 @@ window if there is no window available).
 
 However, to make it fully compatible with neovim and to make neovim able to sync
 its current file to the viewer, [neovim-remote](https://github.com/mhinz/neovim-remote)
-should be installed and the following lines should be added to your `init.vim`:
+should be installed and the following line should be added to your `init.vim`:
 
 ```
-    " open / sync smdv
-    autocmd FileType markdown nnoremap <F5> <Esc>:w<CR>:silent execute '!smdv 'expand('%:p')' -v "'.v:servername'"'<CR>
-
-    " sync smdv on save
-    autocmd BufWritePost *.md silent !smdv %
+    " sync on save
+    autocmd BufWritePost *.md silent execute '!smdv 'expand('%:p')' -v "'.v:servername'"'
 ```
-These settings enable (re)starting the smdv viewer when pressing `<F5>`, while
-the markdown file will also be synced after every save.
+This setting will sync the file to the viewer after every save.
 
 ## Compatibility with vim-instant-markdown
-Alternatively, if syncing after every save is not enough, smdv can also be
-used in conjuction with
-[vim-instant-markdown](https://github.com/suan/vim-instant-markdown). Install the 
-vim-plugin and add the following line to your vimrc:
+Alternatively, if syncing after every save is not enough, smdv can also be used
+in conjuction with
+[vim-instant-markdown](https://github.com/suan/vim-instant-markdown) for
+instant markdown previews. Install the vim-plugin and add the following line to
+your vimrc:
 ```
 let g:instant_markdown_python = 1
 ```
 This line disables the default javascript daemon handling instant previews in favor of
-smdv.
-
+smdv. Consider removing the *sync-on-save* line defined above when using this 
+option; both options are not completely compatible.
 
 ## Screenshots
 ### markdown preview
 ![smdv-dir](img/smdv-md.png)
-### directory
+### folder view
 ![smdv-dir](img/smdv-dir.png)
 

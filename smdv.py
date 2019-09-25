@@ -29,7 +29,6 @@ import sys
 import json
 import time
 import socket
-import typing
 import asyncio
 import argparse
 import warnings
@@ -49,6 +48,7 @@ import websockets
 
 ## Globals
 ARGS = ""  # the SMDV command line arguments
+SMDV_DEFAULT_ARGS = os.environ.get("SMDV_DEFAULT_ARGS", "")  # default SMDV arguments
 JSCLIENTS = set()  # jsclients wait for an update from the pyclient
 PYCLIENTS = set()  # pyclients update the html body of the jsclient
 WEBSOCKETS_SERVER = None  # websockets server
@@ -894,18 +894,18 @@ def number_of_connected_jsclients():
 
 
 # main SMDV program
-def main(args: typing.Optional[argparse.Namespace] = None) -> int:
+def main() -> int:
     """ The main SMDV program
-
-    Args:
-        args: the parsed command line arguments
 
     Returns:
         exit_status: the exit status of SMDV.
     """
     global ARGS
     try:
-        ARGS = args if args else parse_args(sys.argv[1:])
+        default_args = parse_args(SMDV_DEFAULT_ARGS.split(" "))
+        ARGS = parse_args(sys.argv[1:], **default_args.__dict__)
+        with open("/home/flaport/smdv.log", "w") as file:
+            file.write(str(ARGS))
 
         # first do single-shot SMDV flags:
         if ARGS.start_server:
@@ -952,7 +952,7 @@ def main(args: typing.Optional[argparse.Namespace] = None) -> int:
         wait_for_server(server="websocket", status="running")
 
         # if no browser connection can be found: open browser
-        if number_of_connected_jsclients() == 0:
+        if not ARGS.no_browser and number_of_connected_jsclients() == 0:
             open_browser()
             wait_for_connected_jsclient()
 
@@ -1026,11 +1026,12 @@ def open_browser():
 
 
 # parse command line arguments
-def parse_args(args: tuple) -> argparse.Namespace:
+def parse_args(args: tuple, **kwargs) -> argparse.Namespace:
     """ populate the SMDV command line arguments
 
     Args:
         args: the arguments to parse
+        **kwargs: override the default arguments
 
     Returns:
         parsed_args: the parsed arguments
@@ -1042,19 +1043,19 @@ def parse_args(args: tuple) -> argparse.Namespace:
         "filename",
         type=str,
         nargs="?",
-        default="",
+        default=kwargs.get("filename", ""),
         help="path or file to open with SMDV",
     )
     parser.add_argument(
         "-H",
         "--home",
-        default=os.path.expanduser("~"),
+        default=kwargs.get("home", os.path.expanduser("~")),
         help="set the root folder of the smdv server",
     )
     parser.add_argument(
         "--stdin",
         nargs="?",
-        default="md",
+        default=kwargs.get("stdin", "md"),
         choices=["md", "html", "txt"],
         help=(
             "read content for SMDV from stdin. Takes optional encoding types:"
@@ -1062,114 +1063,123 @@ def parse_args(args: tuple) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-p", "--port", default="9876", help="port on which SMDV is served."
+        "-p",
+        "--port",
+        default=kwargs.get("port", "9876"),
+        help="port on which SMDV is served.",
     )
     parser.add_argument(
         "-w",
         "--websocket-port",
-        default="9877",
+        default=kwargs.get("websocket_port", "9877"),
         help="port for websocket communication",
     )
     parser.add_argument(
         "--host",
-        default="localhost",
+        default=kwargs.get("host", "localhost"),
         help="host on which SMDV is served (for now, only localhost is supported)",
         choices=["localhost", "127.0.0.1"],
     )
     parser.add_argument(
         "--websocket-host",
-        default="localhost",
+        default=kwargs.get("websocket_host", "localhost"),
         help="host for websocket communication (for now, only localhost is supported)",
         choices=["localhost", "127.0.0.1"],
     )
     parser.add_argument(
         "--md-css-cdn",
-        default="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
+        default=kwargs.get(
+            "md_css_cdn",
+            "https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/3.0.1/github-markdown.css",
+        ),
         help="location of [github flavored] markdown css cdn (can be a local file)",
     )
     parser.add_argument(
         "-b",
         "--browser",
-        default=os.environ.get("BROWSER", ""),
+        default=kwargs.get("browser", os.environ.get("BROWSER", "")),
         help="default browser to spawn (uses $BROWSER by default)",
     )
     parser.add_argument(
         "-r",
         "--restart",
         action="store_true",
-        default=False,
+        default=kwargs.get("restart", False),
         help="force a restart of SMDV (both servers)",
     )
     parser.add_argument(
         "--hide-navbar",
         action="store_true",
-        default=False,
+        default=kwargs.get("hide_navbar", False),
         help="don't show the SMDV navbar by default",
     )
     parser.add_argument(
         "-t",
         "--terminal",
-        default=os.environ.get("TERMINAL", ""),
+        default=kwargs.get("terminal", os.environ.get("TERMINAL", "")),
         help="default terminal to spawn (uses $TERMINAL by default)",
     )
     parser.add_argument(
         "-B",
         "--no-browser",
         action="store_true",
-        default=False,
+        default=kwargs.get("no_browser", False),
         help="start the server without opening a browser.",
     )
     parser.add_argument(
         "-v",
         "--nvim-address",
-        default="127.0.0.1:9878",
+        default=kwargs.get("nvim_address", "127.0.0.1:9878"),
         help="address or socket to communicate with vim",
     )
     single_shot_arguments = parser.add_mutually_exclusive_group()
     single_shot_arguments.add_argument(
         "--server-status",
         action="store_true",
-        default=False,
+        default=kwargs.get("server_status", False),
         help="ask status of the SMDV server",
     )
     single_shot_arguments.add_argument(
         "--websocket-server-status",
         action="store_true",
-        default=False,
+        default=kwargs.get("websocket_server_status", False),
         help="ask status of the SMDV server",
     )
     single_shot_arguments.add_argument(
         "--start-server",
         action="store_true",
-        default=False,
+        default=kwargs.get("start_server", False),
         help="start the SMDV server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--stop-server",
         action="store_true",
-        default=False,
+        default=kwargs.get("stop_server", False),
         help="stop the SMDV server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--start-websocket-server",
         action="store_true",
-        default=False,
+        default=kwargs.get("start_websocket_server", False),
         help="start the SMDV websocket server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--stop-websocket-server",
         action="store_true",
-        default=False,
+        default=kwargs.get("stop_websocket_server", False),
         help="stop the SMDV websocket server (without doing anything else)",
     )
     single_shot_arguments.add_argument(
         "--stop",
         action="store_true",
-        default=False,
+        default=kwargs.get("stop", False),
         help="stop SMDV running in the background (kills both servers)",
     )
     single_shot_arguments.add_argument(
-        "--start", action="store_true", default=False, help="start SMDV (both servers)"
+        "--start",
+        action="store_true",
+        default=kwargs.get("start", False),
+        help="start SMDV (both servers)",
     )
     parsed_args = parser.parse_args(args=args)
     if parsed_args.stdin is None:
