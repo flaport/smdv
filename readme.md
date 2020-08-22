@@ -7,7 +7,7 @@ a **s**imple **m**ark**d**own **v**iewer for linux.
 ### Required
 
 - `python3` pointing to Python 3.6+.
-- [Pandoc](http://pandoc.org/) [`apt install pandoc` | `pacman -S pandoc` | ... ]
+- [Pandoc](http://pandoc.org/) 2.0+ [`apt install pandoc` | `pacman -S pandoc` | ... ]
 - [Flask](http://flask.pocoo.org/) [`pip3 install flask` | `apt install python3-flask` | `pacman -S python-flask` | ... ]
 - [Websockets](https://websockets.readthedocs.io/) [`pip3 install websockets` | `apt install python3-websockets` | `pacman -S python-websockets` | ... ]
 
