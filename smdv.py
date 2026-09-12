@@ -29,7 +29,9 @@ import re
 import sys
 import json
 import time
+import signal
 import socket
+import typing
 import asyncio
 import argparse
 import warnings
@@ -52,10 +54,8 @@ ARGS = ""  # the smdv command line arguments
 SMDV_DEFAULT_ARGS = os.environ.get("SMDV_DEFAULT_ARGS", "")  # default smdv arguments
 JSCLIENTS = set()  # jsclients wait for an update from the pyclient
 PYCLIENTS = set()  # pyclients update the html body of the jsclient
-WEBSOCKETS_SERVER = None  # websockets server
 BACKMESSAGES = collections.deque()  # for communication between js and py
 FORWARDMESSAGES = collections.deque()  # for communication between js and py
-EVENT_LOOP = asyncio.get_event_loop()
 
 MESSAGE = {}
 
@@ -431,7 +431,7 @@ async def ask_num_js_clients():
 
 
 # handle a message sent by one of the clients:
-async def handle_message(client: websockets.WebSocketServerProtocol, message: str):
+async def handle_message(client: websockets.ServerConnection, message: str):
     """ handle a message sent by one of the clients
 
     Args:
@@ -487,7 +487,7 @@ async def handle_message(client: websockets.WebSocketServerProtocol, message: st
 
 
 # register websocket client
-async def register_client(client: websockets.WebSocketServerProtocol):
+async def register_client(client: websockets.ServerConnection):
     """ register a client
 
     This function registers a client (websocket) in either the set of
@@ -528,12 +528,11 @@ async def send_as_pyclient_async(message: dict):
 
 
 # serve clients
-async def serve_client(client: websockets.WebSocketServerProtocol, path: str):
+async def serve_client(client: websockets.ServerConnection):
     """ asynchronous websocket server to serve a websocket client
 
     Args:
         client: the client (websocket) to serve.
-        path: the path over which to serve
 
     """
     await register_client(client)
@@ -571,11 +570,14 @@ async def send_message_to_all_js_clients():
         if len(BACKMESSAGES) > 20:
             BACKMESSAGES.pop()
     if JSCLIENTS:
-        await asyncio.wait([client.send(json.dumps(MESSAGE)) for client in JSCLIENTS])
+        await asyncio.wait(
+            asyncio.create_task(client.send(json.dumps(MESSAGE)))
+            for client in JSCLIENTS
+        )
 
 
 # unregister websocket client
-async def unregister_client(client: websockets.WebSocketServerProtocol):
+async def unregister_client(client: websockets.ServerConnection):
     """ unregister a client
 
     Args:
@@ -634,19 +636,11 @@ def create_app() -> flask.Flask:
     app = flask.Flask(__name__, static_folder=ARGS.home, static_url_path="/@static")
 
     # stop the flask server
-    def stop_flask_server() -> int:
-        """ stop the flask server
-
-        Returns:
-            exit_status: exit status of the request (0: success, 1: failure)
-
-        """
-        func = flask.request.environ.get("werkzeug.server.shutdown")
-        try:
-            func()
-            return 0
-        except Exception as e:
-            return 1
+    def stop_flask_server() -> typing.NoReturn:
+        """ stop the flask server """
+        os.kill(os.getpid(), signal.SIGINT)
+        time.sleep(1)
+        os.kill(os.getpid(), signal.SIGKILL)
 
     # index route for the smdv app
     @app.route("/", methods=["GET", "PUT", "DELETE"])
@@ -727,8 +721,9 @@ def create_app() -> flask.Flask:
             return ""
 
         if flask.request.method == "DELETE":
-            exit_status = stop_flask_server()
-            return "failed.\n" if exit_status else "success.\n"
+            response = flask.make_response("success.\n")
+            response.call_on_close(stop_flask_server)
+            return response
 
         # should never get here:
         return "failed.\n"
@@ -809,14 +804,17 @@ def edit_in_neovim(filename: str = ""):
     if not os.path.exists(path):
         return
     sock = ARGS.nvim_address.strip()
-    if not ":" in sock:  # unix socket
+    if ":" not in sock:  # unix socket
         dirname = os.path.dirname(sock)
         if not os.path.exists(dirname):
             os.makedirs(dirname)
-    if socket_in_use(sock):
-        subprocess.Popen(["nvr", "-s", "--nostart", "--servername", sock, path])
-    else:
-        subprocess.Popen([ARGS.terminal, "-e", "nvr", "-s", "--servername", sock, path])
+    try:
+        if socket_in_use(sock):
+            subprocess.Popen(["nvr", "-s", "--nostart", "--servername", sock, path])
+        else:
+            subprocess.Popen([ARGS.terminal, "-e", "nvr", "-s", "--servername", sock, path])
+    except OSError as e:
+        print(e)
 
 
 # convert a jupyter notebook to html
@@ -894,7 +892,7 @@ def kill_websocket_server() -> int:
 # ask the number of
 def number_of_connected_jsclients():
     """ ask the websocket server for the number of connected js clients """
-    return EVENT_LOOP.run_until_complete(ask_num_js_clients())
+    return asyncio.run(ask_num_js_clients())
 
 
 # main smdv program
@@ -953,6 +951,13 @@ def main() -> int:
         # wait for the websocket server to be fully started:
         wait_for_server(server="websocket", status="running")
 
+        # be sure to read stdin before opening the browser, in case the
+        # subprocess decides to read from our stdin pipe
+        if not os.isatty(0):
+            stdin_content = sys.stdin.read()
+        else:
+            stdin_content = None
+
         # if no browser connection can be found: open browser
         if not ARGS.no_browser and number_of_connected_jsclients() == 0:
             open_browser()
@@ -971,8 +976,8 @@ def main() -> int:
             return 0
 
         # else, check if something was piped into smdv and update the body accordingly:
-        if not os.isatty(0):
-            send_message_from_stdin()
+        if stdin_content is not None:
+            send_message_from_stdin(stdin_content)
             return 0
 
         # only happens when no arguments are supplied, nor anything was piped into smdv:
@@ -1303,12 +1308,13 @@ def run_server_in_subprocess(server="flask"):
 # websocket server
 def run_websocket_server():
     """ start and run the websocket server """
-    global WEBSOCKETS_SERVER
-    WEBSOCKETS_SERVER = websockets.serve(
-        serve_client, ARGS.websocket_host, ARGS.websocket_port
-    )
-    EVENT_LOOP.run_until_complete(WEBSOCKETS_SERVER)
-    EVENT_LOOP.run_forever()
+    async def serve_forever():
+        async with websockets.serve(
+            serve_client, ARGS.websocket_host, ARGS.websocket_port
+        ) as server:
+            await server.serve_forever()
+
+    asyncio.run(serve_forever())
 
 
 # send a message to the websocket server at the python client
@@ -1319,7 +1325,7 @@ def send_as_pyclient(message: dict):
         message: the message to send (in dictionary format)
     """
     try:
-        EVENT_LOOP.run_until_complete(send_as_pyclient_async(message))
+        asyncio.run(send_as_pyclient_async(message))
     except RuntimeError:
         pass  # allows messages to be lost when sending many messages at once.
 
@@ -1346,9 +1352,8 @@ def send_delete_request_to_server():
 
 
 # update body of smdv from stdin
-def send_message_from_stdin():
+def send_message_from_stdin(content):
     """ read content from stdin and place it in the html body """
-    content = sys.stdin.read()
     try:
         message = json.loads(content)
     except json.decoder.JSONDecodeError:
@@ -1451,7 +1456,7 @@ def validate_message(message: str):
 
 
 # wait until at least on js client is online.
-def wait_for_connected_jsclient(interval: float = 0.3, max_attempts: int = 6):
+def wait_for_connected_jsclient(interval: float = 0.5, max_attempts: int = 20):
     """ wait until a connection to the browser can be made.
 
     Args:
